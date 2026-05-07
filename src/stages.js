@@ -63,26 +63,6 @@
         bulletSpeed: 300
       }
     }
-    {
-  name: 'PESSOAS & CULTURA',
-  subtitle: 'Stage 4 — vibes corporativas',
-  bgColor: '#ff69b4', // rosa
-  rows: 6,
-  cols: 10,
-  marchMs: 380,
-  fireMs: 700,
-  bulletSpeedMul: 1.4,
-  pointsPerKill: 25,
-  bgDraw: 'people',
-  boss: {
-    behaviorKey: 'people',
-    name: 'Brubru',
-    hp: 25,
-    vx: 110,
-    fireMs: 800,
-    bulletSpeed: 260
-  }
-}
   ];
 
   // Lightweight per-stage backdrops. Receive shared `state` to persist particles.
@@ -120,20 +100,5 @@
             size: 2 + Math.floor(Math.random() * 3)
           });
         }
-        people(ctx, t, w, h /*, state */) {
-  ctx.fillStyle = '#ff69b4'; // rosa chapado
-  ctx.fillRect(0, 0, w, h);
-}
-      }
-      const dt = state.lastT ? (t - state.lastT) / 1000 : 0;
-      state.lastT = t;
-      for (const p of state.confetti) {
-        p.y += p.vy * dt;
-        p.x += Math.sin((t + p.y) * 0.005) * 0.4;
-        if (p.y > h) { p.y = -5; p.x = Math.random() * w; }
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, p.size, p.size);
-      }
-    }
   };
 })();
