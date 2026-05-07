@@ -100,5 +100,16 @@
             size: 2 + Math.floor(Math.random() * 3)
           });
         }
+      }
+      const dt = state.lastT ? (t - state.lastT) / 1000 : 0;
+      state.lastT = t;
+      for (const p of state.confetti) {
+        p.y += p.vy * dt;
+        p.x += Math.sin((t + p.y) * 0.005) * 0.4;
+        if (p.y > h) { p.y = -5; p.x = Math.random() * w; }
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      }
+    }
   };
 })();
