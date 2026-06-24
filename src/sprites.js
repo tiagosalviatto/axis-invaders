@@ -360,6 +360,21 @@
   const RED_BULLET_PAL  = [null, '#FF2030', '#FF8090', '#FFD0D0'];
   const BLUE_BULLET_PAL = [null, '#3050FF', '#8095FF', '#D0DCFF'];
 
+  // Scale an image/canvas by a factor into a new canvas (keeps the result
+  // self-contained so callers read its .width/.height directly).
+  function scaleBitmap(src, factor) {
+    const w = Math.max(1, Math.round(src.width * factor));
+    const h = Math.max(1, Math.round(src.height * factor));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, w, h);
+    return c;
+  }
+
   // Bake a ship sprite on its own (used by the selection screen preview).
   function buildShipPreview(shipId) {
     return bake(SHIP_GRIDS[shipId] || PLAYER, SHIP_PREVIEW_PAL, SCALE);
@@ -386,7 +401,7 @@
       redBullet: bake(ENEMY_BULLET, RED_BULLET_PAL, SCALE),
       blueBullet: bake(ENEMY_BULLET, BLUE_BULLET_PAL, SCALE),
       // Phase-2 police officers (stage 3): sprite + dedicated projectiles.
-      officer: bossImages.officer || bossImages.police || buildBossLabel(BOSS_LABELS.police),
+      officer: scaleBitmap(bossImages.officer || bossImages.police || buildBossLabel(BOSS_LABELS.police), 0.7),
       officerBulletRed: bake(POLICE_DART, RED_BULLET_PAL, SCALE),
       officerBulletBlue: bake(POLICE_BOLT, BLUE_BULLET_PAL, SCALE)
     };
