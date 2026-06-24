@@ -41,6 +41,10 @@
         if (pressed[k]) { pressed[k] = false; return k; }
       }
       return null;
-    }
+    },
+    // Flush latched key-press edges. Call when entering a "press to continue"
+    // screen so a key still held from gameplay (e.g. Space while firing) isn't
+    // consumed instantly and skips the screen.
+    clear: () => { for (const k in pressed) pressed[k] = false; }
   };
 })();

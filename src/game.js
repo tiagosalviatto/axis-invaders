@@ -76,6 +76,7 @@
       this.paused = false;
       this.stageTime = 0;
       // Open with the narrative transition; gameplay board is built and waiting behind it.
+      ns.input.clear(); // avoid a held key from the previous stage skipping the cutscene
       this.state = STATES.STORY;
       this.storyT = 0;
       this.storyAutoT = 0;
@@ -168,6 +169,7 @@
     // the ranking inline; OVER shows just the "clock out" message (the ranking
     // is reachable from there via R).
     endGame(state) {
+      ns.input.clear(); // drop keys held during play so the screen isn't skipped
       this.state = state;
       this.scores = [];
       this.boardLoading = false;
