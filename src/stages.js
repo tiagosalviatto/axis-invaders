@@ -12,6 +12,8 @@
       fireMs: 1400,
       bulletSpeedMul: 1.0,
       pointsPerKill: 10,
+      parTime: 45,           // seconds; clearing faster awards a speed bonus
+      completionBonus: 500,
       bgDraw: 'cage',
       boss: {
         behaviorKey: 'cage',
@@ -23,8 +25,8 @@
       }
     },
     {
-      name: 'R8 VELOCITY',
-      subtitle: 'Stage 2 — Audi pursuit',
+      name: 'BYD VELOCITY',
+      subtitle: 'Stage 2 — BYD pursuit',
       bgColor: '#02060a',
       rows: 5,
       cols: 9,
@@ -32,10 +34,12 @@
       fireMs: 1000,
       bulletSpeedMul: 1.3,
       pointsPerKill: 15,
-      bgDraw: 'r8',
+      parTime: 40,
+      completionBonus: 600,
+      bgDraw: 'byd',
       boss: {
-        behaviorKey: 'r8',
-        name: 'AUDI R8',
+        behaviorKey: 'byd',
+        name: 'BYD',
         hp: 20,
         vx: 180,
         beamWarnMs: 600,
@@ -53,6 +57,8 @@
       fireMs: 750,
       bulletSpeedMul: 1.6,
       pointsPerKill: 20,
+      parTime: 38,
+      completionBonus: 700,
       bgDraw: 'samba',
       boss: {
         behaviorKey: 'police',
@@ -75,15 +81,24 @@
       for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
     },
 
-    r8(ctx, t, w, h /*, state */) {
+    byd(ctx, t, w, h /*, state */) {
       ctx.fillStyle = '#15151c';
       ctx.fillRect(w / 2 - 5, 0, 10, h);
       ctx.fillStyle = '#FFD600';
-      const dashH = 30;
-      const gap = 30;
-      const offset = (t * 0.3) % (dashH + gap);
-      for (let y = -offset; y < h; y += dashH + gap) {
-        ctx.fillRect(w / 2 - 1, y, 2, dashH);
+      // Perspective lane: each dash is born tiny at the horizon (top) and
+      // accelerates + grows as it rushes toward the player at the bottom.
+      // The quadratic easing on depth is what unambiguously reads as
+      // "driving forward" instead of an ambiguous flat scroll.
+      const N = 9;            // dashes in flight
+      const speed = 0.00019;  // depth cycles per ms
+      const cx = w / 2;
+      for (let i = 0; i < N; i++) {
+        const p = (((t * speed) + i / N) % 1 + 1) % 1; // depth 0 (far) -> 1 (near)
+        const ease = p * p;                            // accelerate toward viewer
+        const y = ease * h;
+        const dashH = 6 + ease * 42;                   // longer when closer
+        const dashW = 1 + ease * 4;                    // wider when closer
+        ctx.fillRect(cx - dashW / 2, y, dashW, dashH);
       }
     },
 

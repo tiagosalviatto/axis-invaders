@@ -13,6 +13,33 @@
     "1.1.1.1.1.1"
   ];
 
+  // -- Ship variants (provisional pixel-art until PixeLab assets land) ----
+  // BS reuses PLAYER. PC is a slim interceptor; ARTY is a wide gun platform.
+  const SHIP_PC = [
+    ".....1.....",
+    ".....1.....",
+    "....111....",
+    "....212....",
+    "...11111...",
+    "..11.2.11..",
+    ".11.....11.",
+    "..1.....1.."
+  ];
+  const SHIP_ARTY = [
+    "..1.....1..",
+    "..1.....1..",
+    ".111...111.",
+    ".111222111.",
+    "11122222111",
+    "11111111111",
+    "1.1111111.1",
+    "1.1.....1.1"
+  ];
+  const SHIP_GRIDS = { BS: PLAYER, PC: SHIP_PC, ARTY: SHIP_ARTY };
+
+  // Neutral palette so all ships read consistently on the selection screen.
+  const SHIP_PREVIEW_PAL = [null, '#CFD6E6', '#8FA0C0', '#FFFFFF'];
+
   const PLAYER_BULLET = [
     ".2.",
     "121",
@@ -74,8 +101,8 @@
     "...2.2.2..."
   ];
 
-  // STAGE 2 - R8 Velocity: chevron, car, headlight
-  const R8_A = [
+  // STAGE 2 - BYD Velocity: chevron, car, headlight
+  const BYD_A = [
     ".....1.....",
     "....111....",
     "...11111...",
@@ -85,7 +112,7 @@
     ".111121111.",
     "...11.11..."
   ];
-  const R8_B = [
+  const BYD_B = [
     "...........",
     "....111....",
     "...11111...",
@@ -95,7 +122,7 @@
     "22222222222",
     ".2..2.2..2."
   ];
-  const R8_C = [
+  const BYD_C = [
     "...22222...",
     "..2333332..",
     ".233333332.",
@@ -138,126 +165,115 @@
     ".333333333."
   ];
 
-  // -- Boss sprite grids ------------------------------------------------
-  // All bosses use a wider palette (defined below). Rows are auto-padded
-  // to a fixed width via `pad()` so authoring is forgiving.
+  // -- Boss sprite generation -------------------------------------------
+  // Bosses are rendered as oversized typographic name-plates: bold block
+  // letters with a heavy silhouette stroke, gradient fill, and an inner
+  // accent stroke. The text itself becomes the boss's body.
 
-  function pad(rows, w) {
-    return rows.map(r => r.length >= w ? r.slice(0, w) : r + '.'.repeat(w - r.length));
+  // Per-boss typographic specs. Each spec defines the marquee text and the
+  // color treatment used to render it as a giant block-letter sprite.
+  const BOSS_LABELS = {
+    cage: {
+      text: 'CAGE!',
+      fontSize: 96,
+      family: '"Impact", "Arial Black", "Helvetica Neue", sans-serif',
+      silhouette: '#1a0a04',           // dark outer halo
+      gradient: [[0, '#FFE058'], [0.45, '#FF4030'], [1, '#7A0010']],
+      innerStroke: '#FFFFFF',
+      highlight: 'rgba(255,255,255,0.35)',
+      shadow: 'rgba(0,0,0,0.55)',
+      glow: 'rgba(255, 60, 30, 0.95)'
+    },
+    byd: {
+      text: 'BYD',
+      fontSize: 120,
+      family: '"Impact", "Arial Black", "Helvetica Neue", sans-serif',
+      silhouette: '#0a0a0c',
+      gradient: [[0, '#F8F8FA'], [0.5, '#A0A4AC'], [1, '#3A3D44']],
+      innerStroke: '#FF1418',
+      highlight: 'rgba(255,255,255,0.65)',
+      shadow: 'rgba(0,0,0,0.7)',
+      glow: 'rgba(255, 20, 24, 0.55)'
+    },
+    police: {
+      text: '5-0',
+      fontSize: 132,
+      family: '"Impact", "Arial Black", "Helvetica Neue", sans-serif',
+      silhouette: '#04081a',
+      gradient: [[0, '#FFFFFF'], [1, '#C8D4FF']],
+      innerStroke: '#1818FF',
+      highlight: 'rgba(255,255,255,0.85)',
+      shadow: 'rgba(0,0,0,0.6)',
+      glow: 'rgba(80, 120, 255, 0.85)'
+    }
+  };
+
+  function buildBossLabel(spec) {
+    const probe = document.createElement('canvas').getContext('2d');
+    const font = `900 ${spec.fontSize}px ${spec.family}`;
+    probe.font = font;
+    const tw = probe.measureText(spec.text).width;
+    const padX = 28;
+    const padY = 26;
+    const w = Math.ceil(tw) + padX * 2;
+    const h = Math.ceil(spec.fontSize * 1.25) + padY * 2;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+
+    const cx = w / 2, cy = h / 2;
+
+    // Soft glow halo (drawn as a stroked silhouette behind everything).
+    if (spec.glow) {
+      ctx.save();
+      ctx.shadowColor = spec.glow;
+      ctx.shadowBlur = 28;
+      ctx.lineWidth = 18;
+      ctx.strokeStyle = spec.silhouette;
+      ctx.strokeText(spec.text, cx, cy);
+      ctx.restore();
+    }
+
+    // Drop shadow.
+    ctx.fillStyle = spec.shadow;
+    ctx.fillText(spec.text, cx + 4, cy + 5);
+
+    // Heavy outer silhouette stroke — this is the boss's "body" outline.
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = spec.silhouette;
+    ctx.strokeText(spec.text, cx, cy);
+
+    // Gradient fill across the letter body.
+    const grad = ctx.createLinearGradient(0, padY, 0, h - padY);
+    for (const [stop, color] of spec.gradient) grad.addColorStop(stop, color);
+    ctx.fillStyle = grad;
+    ctx.fillText(spec.text, cx, cy);
+
+    // Top-half highlight: clip the upper portion and re-paint a brighter pass.
+    if (spec.highlight) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, w, cy - spec.fontSize * 0.05);
+      ctx.clip();
+      ctx.fillStyle = spec.highlight;
+      ctx.fillText(spec.text, cx, cy);
+      ctx.restore();
+    }
+
+    // Inner accent stroke for a "chrome" outline against the fill.
+    if (spec.innerStroke) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = spec.innerStroke;
+      ctx.strokeText(spec.text, cx, cy);
+    }
+
+    return c;
   }
-
-  // BOSS 1 — Nicolas Cage face (Stage 1)
-  // Palette: 1=hair-shadow, 2=hair, 3=skin-shadow, 4=skin-mid, 5=skin-hi,
-  //          6=white (teeth/eye-whites), 7=mouth-dark/suit, 8=eye-iris.
-  const BOSS_CAGE_W = 36;
-  const BOSS_CAGE = pad([
-    "................2222................",
-    ".............22222222222............",
-    "...........2222222222222222.........",
-    "..........222222222222222222........",
-    "........22221111111111111122........",
-    "........22111111111111111122........",
-    "........2211155555555555111122......",
-    "........2115555555555555555122......",
-    "........2115554444444444555122......",
-    ".......221155544433333344455511.....",
-    ".......21155443311111111133455511...",
-    ".......21155443116666616666613455511",
-    ".......21155441168868816886611345511",
-    ".......21155441168888816888811345511",
-    ".......21155443116666616666613345511",
-    ".......21155544334444444443344555511",
-    ".......21155544444444444444444555511",
-    "........2155544444445554444445555511",
-    "........21555444433345544334445555...",
-    "........215554443333445443334455.....",
-    "........21555443333345443333455......",
-    ".........5544333366666666333445......",
-    ".........5443336666666666633345......",
-    "..........4433777777777777633341.....",
-    "..........4433777777777777633341.....",
-    "..........4433377777777776333441.....",
-    "..........4433336666666663333441.....",
-    "..........4444333333333333344441.....",
-    "...........5544443333333334444441....",
-    "............15554444333334444441.....",
-    ".............15555444444555441.......",
-    "..............166666666666661........",
-    ".............16666666666666661.......",
-    "............777666666666666771.......",
-    "...........7777766666666677771.......",
-    "..........17777777777777777771......."
-  ], BOSS_CAGE_W);
-
-  // BOSS 2 — Audi R8 (Stage 2), side profile facing right.
-  // Palette: 1=silver-hi, 2=silver-mid, 3=gunmetal, 4=black,
-  //          5=audi-red, 6=headlight-white.
-  const BOSS_R8_W = 56;
-  const BOSS_R8 = pad([
-    "........................................................",
-    "........................................................",
-    ".....................1111111111.........................",
-    "..................11111111111111111.....................",
-    "...............111111111166666666661111.................",
-    ".............11111122266666666666666661111..............",
-    "...........1111122222266666666666666666622111...........",
-    ".........51111222222266666666666666666666222111.........",
-    "........51111222222222226622266222226662222222111111....",
-    "........51112222222222222222222222222222222222211111166.",
-    "........5111122222222222222222222222222222222221111166..",
-    ".........5112222233333322222222222233333322222111166....",
-    "..........122223333333333222222223333333333322211166....",
-    "...........2223333333333332222223333333333333221116.....",
-    "............33333333333333333333333333333333333111......",
-    ".............33333333333333333333333333333333333........",
-    "...............444............................444......",
-    "..............44444..........................44444.....",
-    ".............4443344........................4443344....",
-    ".............4433344........................4433344....",
-    ".............4443344........................4443344....",
-    "..............44444..........................44444.....",
-    "...............444............................444......",
-    "........................................................"
-  ], BOSS_R8_W);
-
-  // BOSS 3 — Police cruiser (Stage 3), front view with siren housings.
-  // Palette: 1=white-body, 2=black, 3=dark-grey, 4=blue-light(off),
-  //          5=red-light(off), 6=windshield-blue.
-  // (Siren bulbs themselves are drawn as alternating overlays in entities.js
-  //  so they can flicker — the sprite shows just dim housings.)
-  const BOSS_POLICE_W = 36;
-  const BOSS_POLICE = pad([
-    "................222.................",
-    "................222.................",
-    "....22222.................22222.....",
-    "...2233322...............2233322....",
-    "...2333332...............2333332....",
-    "...2233322...............2233322....",
-    "....22222.................22222.....",
-    ".......2222222222222222222222.......",
-    "......111111111111111111111111......",
-    ".....11666666666666666666666661.....",
-    "....116666666666666666666666666611..",
-    "....11111122222222222222211111111...",
-    "...11111111111111111111111111111....",
-    "..1111111111111111111111111111111...",
-    ".111111111111111111111111111111111..",
-    "1112222222222222222222222222222111..",
-    "1116666666666666666666666666666111..",
-    "1116666666666666666666666666666111..",
-    "1111111111111111111111111111111111..",
-    "1116666222222222222222222226666111..",
-    "1116666222222222222222222226666111..",
-    "1111111111111111111111111111111111..",
-    "1112222222222222222222222222222111..",
-    "11333333333333333333333333333333311.",
-    "1133.....3333333333333333333.....311",
-    "11333333333333333333333333333333311.",
-    "..2222...........................2222",
-    ".222222.........................222222",
-    ".222222.........................222222",
-    "..2222...........................2222"
-  ], BOSS_POLICE_W);
 
   function bake(grid, palette, scale) {
     const w = grid[0].length;
@@ -282,50 +298,70 @@
     return c;
   }
 
+  // Boss artwork (PixeLab pixel art). Keyed by the stage bossKey. If an image
+  // is missing or fails to load, buildStageSprites falls back to the
+  // typographic label so the game still runs.
+  const BOSS_IMAGE_SRC = {
+    cage:   'assets/bosses/cage.png',
+    byd:    'assets/bosses/byd.png',
+    police: 'assets/bosses/viatura.png'
+  };
+  const bossImages = Object.create(null);
+
+  function loadImage(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null); // resolve null -> fall back gracefully
+      img.src = src;
+    });
+  }
+
+  function preloadAssets() {
+    const keys = Object.keys(BOSS_IMAGE_SRC);
+    return Promise.all(
+      keys.map(k => loadImage(BOSS_IMAGE_SRC[k]).then(img => { bossImages[k] = img; }))
+    ).then(() => undefined);
+  }
+
   const SCALE = 3;
 
   // Stage palettes — index 0 unused (transparent), 1..3 in shapes.
   const PALETTES = [
     // Stage 1 - Cage Rage: blood-red, pale-yellow, white
     [null, '#C8102E', '#FFD45A', '#FFFFFF'],
-    // Stage 2 - R8 Velocity: silver, gunmetal, Audi-red
+    // Stage 2 - BYD Velocity: silver, gunmetal, BYD-red
     [null, '#D8D8D8', '#7A7A7A', '#FF1418'],
     // Stage 3 - Samba Storm: yellow, green, red
     [null, '#FFD400', '#009C3B', '#FF4D4D']
   ];
 
-  // Boss palettes are independent of the per-stage palette so each boss
-  // can carry its own faithful colors.
-  const BOSS_PALETTES = {
-    cage:   [null, '#3a2418', '#6b4a30', '#a47148', '#d2a878', '#f0d8b8', '#ffffff', '#1a1a1a', '#2a4838'],
-    r8:     [null, '#e8e8e8', '#a0a0a0', '#5a5a5a', '#1a1a1a', '#ff1418', '#ffffff'],
-    police: [null, '#ffffff', '#1a1a1a', '#3a3a3a', '#1818ff', '#ff1818', '#80c0ff']
-  };
-
-  const BOSS_SCALES = { cage: 5, r8: 4, police: 5 };
-
   // Tinted enemy-bullet palettes for the police siren shots.
   const RED_BULLET_PAL  = [null, '#FF2030', '#FF8090', '#FFD0D0'];
   const BLUE_BULLET_PAL = [null, '#3050FF', '#8095FF', '#D0DCFF'];
 
-  function buildStageSprites(stageIdx) {
-    const pal = PALETTES[stageIdx];
-    let enemies, bossGrid, bossKey;
-    if (stageIdx === 0)      { enemies = [CAGE_A, CAGE_B, CAGE_C];     bossGrid = BOSS_CAGE;   bossKey = 'cage'; }
-    else if (stageIdx === 1) { enemies = [R8_A, R8_B, R8_C];           bossGrid = BOSS_R8;     bossKey = 'r8'; }
-    else                     { enemies = [SAMBA_A, SAMBA_B, SAMBA_C];  bossGrid = BOSS_POLICE; bossKey = 'police'; }
+  // Bake a ship sprite on its own (used by the selection screen preview).
+  function buildShipPreview(shipId) {
+    return bake(SHIP_GRIDS[shipId] || PLAYER, SHIP_PREVIEW_PAL, SCALE);
+  }
 
-    const bossPal = BOSS_PALETTES[bossKey];
-    const bossScale = BOSS_SCALES[bossKey];
+  function buildStageSprites(stageIdx, shipId) {
+    const pal = PALETTES[stageIdx];
+    const shipGrid = SHIP_GRIDS[shipId] || PLAYER;
+    let enemies, bossKey;
+    if (stageIdx === 0)      { enemies = [CAGE_A, CAGE_B, CAGE_C];     bossKey = 'cage'; }
+    else if (stageIdx === 1) { enemies = [BYD_A, BYD_B, BYD_C];        bossKey = 'byd'; }
+    else                     { enemies = [SAMBA_A, SAMBA_B, SAMBA_C];  bossKey = 'police'; }
+
+    const bossBitmap = bossImages[bossKey] || buildBossLabel(BOSS_LABELS[bossKey]);
 
     return {
-      player: bake(PLAYER, pal, SCALE),
+      player: bake(shipGrid, pal, SCALE),
       playerBullet: bake(PLAYER_BULLET, pal, SCALE),
       enemyBullet: bake(ENEMY_BULLET, pal, SCALE),
       enemies: enemies.map(g => bake(g, pal, SCALE)),
-      boss: bake(bossGrid, bossPal, bossScale),
+      boss: bossBitmap,
       bossKey,
-      bossPalette: bossPal,
       bigEnemyBullet: bake(BIG_ENEMY_BULLET, pal, SCALE),
       redBullet: bake(ENEMY_BULLET, RED_BULLET_PAL, SCALE),
       blueBullet: bake(ENEMY_BULLET, BLUE_BULLET_PAL, SCALE)
@@ -335,7 +371,8 @@
   ns.sprites = {
     SCALE,
     PALETTES,
-    BOSS_PALETTES,
-    buildStageSprites
+    buildStageSprites,
+    buildShipPreview,
+    preloadAssets
   };
 })();

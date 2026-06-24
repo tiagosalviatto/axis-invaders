@@ -3,7 +3,7 @@
 A tiny browser-based Space Invaders–style game with three themed stages:
 
 1. **Cage Rage** — Nicolas Cage-inspired chaos (dramatic faces, blood-red palette)
-2. **R8 Velocity** — Audi R8-inspired pursuit (silver/gunmetal/Audi-red, scrolling lane)
+2. **BYD Velocity** — BYD-inspired pursuit (silver/gunmetal/BYD-red, scrolling lane)
 3. **Samba Storm** — Brazilian Carnaval party (yellow/green/red, drifting confetti)
 
 Difficulty ramps classically: each stage adds rows, faster march, faster bullets, more frequent enemy fire.

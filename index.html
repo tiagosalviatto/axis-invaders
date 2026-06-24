@@ -8,13 +8,21 @@
 </head>
 <body>
   <canvas id="game" width="800" height="600"></canvas>
-  <div id="hint">&larr; &rarr; / A D : move &nbsp;&middot;&nbsp; Space : fire &nbsp;&middot;&nbsp; Enter : start &nbsp;&middot;&nbsp; P : pause</div>
+  <div id="hint">&larr; &uarr; &darr; &rarr; / WASD : move &nbsp;&middot;&nbsp; Space : fire &nbsp;&middot;&nbsp; Any key : start &nbsp;&middot;&nbsp; P : pause</div>
+
+  <div id="nameEntry" class="hidden">
+    <label for="nameInput">SEU NOME</label>
+    <input id="nameInput" type="text" maxlength="16" autocomplete="off" spellcheck="false">
+    <button id="nameSave">SALVAR</button>
+  </div>
 
   <script src="src/sprites.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/input.js"></script>
+  <script src="src/ships.js"></script>
   <script src="src/stages.js"></script>
   <script src="src/entities.js"></script>
+  <script src="src/scoreboard.js"></script>
   <script src="src/game.js"></script>
   <script src="src/main.js"></script>
 </body>

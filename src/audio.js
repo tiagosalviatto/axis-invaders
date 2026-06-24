@@ -97,7 +97,7 @@
           osc.stop(t0 + 1.05);
         });
       } else if (stageIdx === 1) {
-        // R8 engine rev: rising sweep
+        // BYD motor rev: rising sweep
         const osc = a.createOscillator();
         const g = a.createGain();
         osc.type = 'sawtooth';

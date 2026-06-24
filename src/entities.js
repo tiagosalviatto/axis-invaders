@@ -7,25 +7,36 @@
   }
 
   class Player {
-    constructor(canvasW, canvasH, bitmap) {
+    constructor(canvasW, canvasH, bitmap, stats) {
+      stats = stats || {};
       this.bitmap = bitmap;
       this.w = bitmap.width;
       this.h = bitmap.height;
       this.canvasW = canvasW;
+      this.canvasH = canvasH;
       this.x = (canvasW - this.w) / 2;
       this.y = canvasH - this.h - 24;
-      this.speed = 300; // px/s
+      this.speed = stats.speed || 300; // px/s
       this.cooldown = 0;
-      this.cooldownMax = 0.28;
+      this.cooldownMax = stats.cooldownMax || 0.28;
+      // Vertical movement is restricted to the bottom band of the screen
+      // so the ship can't drift into the enemy grid or HUD.
+      this.yMin = canvasH * 0.55;
+      this.yMax = canvasH - this.h - 8;
     }
     update(dt, input) {
-      let dx = 0;
-      if (input.isDown('ArrowLeft') || input.isDown('KeyA')) dx -= 1;
+      let dx = 0, dy = 0;
+      if (input.isDown('ArrowLeft')  || input.isDown('KeyA')) dx -= 1;
       if (input.isDown('ArrowRight') || input.isDown('KeyD')) dx += 1;
+      if (input.isDown('ArrowUp')    || input.isDown('KeyW')) dy -= 1;
+      if (input.isDown('ArrowDown')  || input.isDown('KeyS')) dy += 1;
       this.x += dx * this.speed * dt;
+      this.y += dy * this.speed * 0.75 * dt;
       const margin = 8;
       if (this.x < margin) this.x = margin;
       if (this.x + this.w > this.canvasW - margin) this.x = this.canvasW - margin - this.w;
+      if (this.y < this.yMin) this.y = this.yMin;
+      if (this.y > this.yMax) this.y = this.yMax;
       this.cooldown -= dt;
     }
     canFire() { return this.cooldown <= 0; }
@@ -266,8 +277,10 @@
     }
 
     draw(ctx) {
-      ctx.drawImage(this.bitmap, this.x | 0, this.y | 0);
+      // Police halo sits behind the letters so they stay readable on top
+      // of the flashing red/blue glow.
       if (this.behaviorKey === 'police') drawPoliceSirens(ctx, this);
+      ctx.drawImage(this.bitmap, this.x | 0, this.y | 0);
       if (this.flashTimer > 0) {
         ctx.save();
         ctx.globalCompositeOperation = 'source-atop';
@@ -324,29 +337,28 @@
   }
 
   function drawPoliceSirens(ctx, boss) {
-    // Sirens sit on the housings drawn at the top of the police sprite
-    // (rows ~2-6, columns ~1/4 and ~3/4 across the sprite).
-    const yTop = boss.y + boss.h * 0.13;
-    const r = Math.max(7, boss.w * 0.045);
-    const leftX = boss.x + boss.w * 0.222;
-    const rightX = boss.x + boss.w * 0.778;
+    // Police boss is rendered as the giant "5-0" letter sprite. We surround
+    // it with an alternating red/blue glow halo anchored to the active
+    // side, so the whole boss reads as a flashing siren.
+    const x = boss.x;
+    const y = boss.y;
+    const cy = y + boss.h / 2;
+    const left = boss.sirenLeft;
+    const glowX = left ? x + boss.w * 0.28 : x + boss.w * 0.72;
+    const dimX  = left ? x + boss.w * 0.72 : x + boss.w * 0.28;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    if (boss.sirenLeft) {
-      ctx.fillStyle = 'rgba(255,40,40,0.55)';
-      ctx.beginPath(); ctx.arc(leftX, yTop, r * 2.4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ff3030';
-      ctx.beginPath(); ctx.arc(leftX, yTop, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#101040';
-      ctx.beginPath(); ctx.arc(rightX, yTop, r * 0.8, 0, Math.PI * 2); ctx.fill();
-    } else {
-      ctx.fillStyle = 'rgba(60,80,255,0.55)';
-      ctx.beginPath(); ctx.arc(rightX, yTop, r * 2.4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#3050ff';
-      ctx.beginPath(); ctx.arc(rightX, yTop, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#400808';
-      ctx.beginPath(); ctx.arc(leftX, yTop, r * 0.8, 0, Math.PI * 2); ctx.fill();
+    function halo(cx, color, intensity) {
+      const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, boss.w * 0.45);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.globalAlpha = intensity;
+      ctx.fillRect(x - boss.w * 0.3, y - boss.h * 0.3,
+                   boss.w * 1.6, boss.h * 1.6);
     }
+    halo(glowX, left ? 'rgba(255, 40, 60, 0.85)' : 'rgba(60, 90, 255, 0.85)', 1);
+    halo(dimX,  left ? 'rgba(60, 90, 255, 0.35)' : 'rgba(255, 40, 60, 0.35)', 0.6);
     ctx.restore();
   }
 
@@ -355,18 +367,23 @@
       boss.fireTimer -= dt;
       if (boss.fireTimer <= 0) {
         boss.fireTimer = (boss.cfg.fireMs || 1400) / 1000;
-        return {
-          kind: 'shot',
-          x: boss.x + boss.w / 2,
-          y: boss.y + boss.h * 0.7,
-          vy: boss.cfg.bulletSpeed || 220,
-          sprite: boss.cfg.bigBulletSprite
-        };
+        // Fan of three small bullets from the mouth: one straight down,
+        // two diagonals, all originating from the same point.
+        const mouthX = boss.x + boss.w / 2;
+        const mouthY = boss.y + boss.h * 0.72;
+        const speed = boss.cfg.bulletSpeed || 220;
+        const diagVx = speed * 0.7;
+        const sprite = boss.cfg.bulletSprite;
+        return [
+          { kind: 'shot', x: mouthX, y: mouthY, vy: speed, vx: 0,        sprite },
+          { kind: 'shot', x: mouthX, y: mouthY, vy: speed, vx: -diagVx,  sprite },
+          { kind: 'shot', x: mouthX, y: mouthY, vy: speed, vx:  diagVx,  sprite }
+        ];
       }
       return null;
     },
 
-    r8(boss, dt) {
+    byd(boss, dt) {
       if (!boss.beam) boss.beam = { state: 'idle', timer: 1.2, x: 0, damaged: false };
       const b = boss.beam;
       b.timer -= dt;

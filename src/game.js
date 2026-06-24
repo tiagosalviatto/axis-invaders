@@ -1,7 +1,7 @@
 (function () {
   const ns = (window.AxisInvaders = window.AxisInvaders || {});
 
-  const STATES = { MENU: 'menu', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win' };
+  const STATES = { MENU: 'menu', SELECT: 'select', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win' };
 
   class Game {
     constructor(canvas) {
@@ -15,6 +15,9 @@
       this.stageIdx = 0;
       this.score = 0;
       this.lives = 3;
+      this.shipId = ns.ships.DEFAULT;
+      this.selIdx = 0;
+      this.shipPreviews = null; // baked lazily on first selection screen
       this.bullets = [];
       this.particles = [];
       this.player = null;
@@ -25,13 +28,30 @@
       this.flash = 0;
       this.paused = false;
       this.bgState = {};
+
+      // Scoring / high-score table
+      this.stageTime = 0;      // seconds elapsed in the current stage (PLAY only)
+      this.stageTimes = [];    // recorded clear time per completed stage
+      this.scores = [];        // snapshot of the table on the end screen
+      this.awaitingName = false;
+      this.nameEl = document.getElementById('nameEntry');
+      this.nameInput = document.getElementById('nameInput');
+      const saveBtn = document.getElementById('nameSave');
+      if (saveBtn) saveBtn.addEventListener('click', () => this.submitName());
+      if (this.nameInput) {
+        this.nameInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); this.submitName(); }
+        });
+      }
     }
 
     startStage(idx) {
       this.stageIdx = idx;
       const stage = ns.stages[idx];
-      this.sprites = ns.sprites.buildStageSprites(idx);
-      this.player = new ns.entities.Player(this.w, this.h, this.sprites.player);
+      this.sprites = ns.sprites.buildStageSprites(idx, this.shipId);
+      this.player = new ns.entities.Player(
+        this.w, this.h, this.sprites.player, ns.ships.defs[this.shipId]
+      );
       this.grid = new ns.entities.EnemyGrid(stage, this.sprites, this.w);
       this.boss = null;
       this.bullets.length = 0;
@@ -40,28 +60,99 @@
       this.state = STATES.INTRO;
       this.introTime = 1.8;
       this.paused = false;
+      this.stageTime = 0;
       ns.audio.playStageMotif(idx);
     }
 
     startGame() {
       this.score = 0;
       this.lives = 3;
+      this.stageTimes = [];
+      this.awaitingName = false;
+      this.hideNameEntry();
       this.startStage(0);
+    }
+
+    // Award completion + speed bonuses for the stage just cleared and record
+    // its clear time. Called at each point where we leave a stage (advance or win).
+    finishStage() {
+      const stage = ns.stages[this.stageIdx];
+      this.score += stage.completionBonus || 500;
+      const par = stage.parTime || 40;
+      const speedBonus = Math.max(0, Math.round((par - this.stageTime) * 20));
+      this.score += speedBonus;
+      this.stageTimes.push(Math.round(this.stageTime * 10) / 10);
+    }
+
+    // Transition into an end screen (OVER/WIN), capturing the score table and
+    // prompting for a name when the run makes the top of the board.
+    endGame(state) {
+      this.state = state;
+      this.scores = ns.scoreboard.load();
+      if (ns.scoreboard.qualifies(this.score)) {
+        this.awaitingName = true;
+        this.showNameEntry();
+      } else {
+        this.awaitingName = false;
+      }
+    }
+
+    showNameEntry() {
+      if (!this.nameEl) return;
+      this.nameEl.classList.remove('hidden');
+      if (this.nameInput) { this.nameInput.value = ''; this.nameInput.focus(); }
+    }
+
+    hideNameEntry() {
+      if (this.nameEl) this.nameEl.classList.add('hidden');
+    }
+
+    submitName() {
+      if (!this.awaitingName) return;
+      const name = ((this.nameInput && this.nameInput.value) || '').trim().slice(0, 16) || 'ANON';
+      this.scores = ns.scoreboard.save({
+        name,
+        score: this.score,
+        date: new Date().toISOString().slice(0, 10),
+        stageTimes: this.stageTimes.slice()
+      });
+      this.awaitingName = false;
+      this.hideNameEntry();
     }
 
     update(dt) {
       const stage = ns.stages[this.stageIdx];
 
       if (this.state === STATES.MENU) {
-        if (ns.input.consumePress('Enter')) {
+        if (ns.input.consumeAnyPress()) {
           ns.audio.enable();
+          this.selIdx = ns.ships.order.indexOf(this.shipId);
+          if (this.selIdx < 0) this.selIdx = 0;
+          this.state = STATES.SELECT;
+        }
+        return;
+      }
+
+      if (this.state === STATES.SELECT) {
+        const n = ns.ships.order.length;
+        if (ns.input.consumePress('ArrowLeft') || ns.input.consumePress('KeyA')) {
+          this.selIdx = (this.selIdx - 1 + n) % n;
+          ns.audio.playShoot();
+        }
+        if (ns.input.consumePress('ArrowRight') || ns.input.consumePress('KeyD')) {
+          this.selIdx = (this.selIdx + 1) % n;
+          ns.audio.playShoot();
+        }
+        if (ns.input.consumePress('Space') || ns.input.consumePress('Enter')) {
+          this.shipId = ns.ships.order[this.selIdx];
           this.startGame();
         }
         return;
       }
 
       if (this.state === STATES.OVER || this.state === STATES.WIN) {
-        if (ns.input.consumePress('Enter')) this.state = STATES.MENU;
+        if (this.awaitingName) return; // block menu until the name is submitted
+        if (ns.input.consumeAnyPress()) this.state = STATES.MENU;
         return;
       }
 
@@ -75,13 +166,15 @@
       if (ns.input.consumePress('KeyP')) this.paused = !this.paused;
       if (this.paused) return;
 
+      this.stageTime += dt;
+
       this.player.update(dt, ns.input);
 
       if (ns.input.isDown('Space') && this.player.canFire()) {
         this.bullets.push(new ns.entities.Bullet(
           this.player.x + this.player.w / 2,
           this.player.y - 4,
-          -540 * stage.bulletSpeedMul,
+          -540 * stage.bulletSpeedMul * ns.ships.defs[this.shipId].bulletSpeedMul,
           'player',
           this.sprites.playerBullet
         ));
@@ -99,13 +192,19 @@
         ));
       }
 
-      // Boss update + attack events
+      // Boss update + attack events. Behaviors may return a single shot
+      // event or an array of shots (e.g. Cage's three-bullet fan).
       if (this.boss && this.boss.alive) {
         const ev = this.boss.update(dt);
-        if (ev && ev.kind === 'shot') {
-          this.bullets.push(new ns.entities.Bullet(
-            ev.x, ev.y, ev.vy, 'enemy', ev.sprite, ev.vx || 0
-          ));
+        if (ev) {
+          const shots = Array.isArray(ev) ? ev : [ev];
+          for (const s of shots) {
+            if (s && s.kind === 'shot') {
+              this.bullets.push(new ns.entities.Bullet(
+                s.x, s.y, s.vy, 'enemy', s.sprite, s.vx || 0
+              ));
+            }
+          }
         }
       }
 
@@ -140,7 +239,7 @@
               this.particles,
               b.x + b.w / 2, b.y,
               this.boss.cfg.behaviorKey === 'cage'  ? ['#FFD45A', '#C8102E', '#FFFFFF'] :
-              this.boss.cfg.behaviorKey === 'r8'    ? ['#D8D8D8', '#FF1418', '#FFFFFF'] :
+              this.boss.cfg.behaviorKey === 'byd'   ? ['#D8D8D8', '#FF1418', '#FFFFFF'] :
                                                      ['#3050FF', '#FF2030', '#FFFFFF']
             );
             ns.audio.playExplode();
@@ -166,11 +265,11 @@
             this.player.y + this.player.h / 2,
             ns.sprites.PALETTES[this.stageIdx]
           );
-          if (this.lives <= 0) this.state = STATES.OVER;
+          if (this.lives <= 0) this.endGame(STATES.OVER);
         }
       }
 
-      // Beam vs player (R8 boss). Only one hit per firing window.
+      // Beam vs player (BYD boss). Only one hit per firing window.
       if (this.boss && this.boss.alive) {
         const beamRect = this.boss.beamRect(this.h);
         if (beamRect && !this.boss.beam.damaged && ns.entities.aabb(beamRect, this.player)) {
@@ -184,7 +283,7 @@
             this.player.y + this.player.h / 2,
             ['#FF1418', '#FFFFFF', '#FFA040']
           );
-          if (this.lives <= 0) this.state = STATES.OVER;
+          if (this.lives <= 0) this.endGame(STATES.OVER);
         }
       }
 
@@ -194,7 +293,7 @@
       this.particles = this.particles.filter(p => p.alive);
 
       // Lose if enemies cross player line
-      if (this.grid.bottomY() >= this.player.y) this.state = STATES.OVER;
+      if (this.grid.bottomY() >= this.player.y) this.endGame(STATES.OVER);
 
       // Stage progression: clear wave -> spawn boss -> kill boss -> next stage
       if (this.grid.aliveCount() === 0 && this.state === STATES.PLAY) {
@@ -204,20 +303,25 @@
             this.boss = new ns.entities.Boss({
               ...bossCfg,
               bitmap: this.sprites.boss,
+              bulletSprite: this.sprites.enemyBullet,
               bigBulletSprite: this.sprites.bigEnemyBullet,
               redBulletSprite: this.sprites.redBullet,
               blueBulletSprite: this.sprites.blueBullet
             }, this.w);
           } else if (this.stageIdx < ns.stages.length - 1) {
+            this.finishStage();
             this.startStage(this.stageIdx + 1);
           } else {
-            this.state = STATES.WIN;
+            this.finishStage();
+            this.endGame(STATES.WIN);
           }
         } else if (!this.boss.alive) {
           if (this.stageIdx < ns.stages.length - 1) {
+            this.finishStage();
             this.startStage(this.stageIdx + 1);
           } else {
-            this.state = STATES.WIN;
+            this.finishStage();
+            this.endGame(STATES.WIN);
           }
         }
       }
@@ -237,6 +341,11 @@
 
       if (this.state === STATES.MENU) {
         this.drawMenu();
+        return;
+      }
+
+      if (this.state === STATES.SELECT) {
+        this.drawSelect();
         return;
       }
 
@@ -265,27 +374,114 @@
       }
 
       if (this.state === STATES.OVER) {
-        this.text('GAME OVER', this.w / 2, this.h / 2 - 30, 56, '#FF3030');
-        this.text(`Score: ${this.score}`, this.w / 2, this.h / 2 + 24, 22, '#fff');
-        this.text('Press ENTER for menu', this.w / 2, this.h / 2 + 70, 16, '#aaa');
+        this.drawEndScreen('GAME OVER', '#FF3030');
       }
 
       if (this.state === STATES.WIN) {
-        this.text('YOU WIN!', this.w / 2, this.h / 2 - 36, 64, '#FFD400');
-        this.text('All 3 stages cleared.', this.w / 2, this.h / 2 + 14, 18, '#fff');
-        this.text(`Final Score: ${this.score}`, this.w / 2, this.h / 2 + 48, 22, '#fff');
-        this.text('Press ENTER for menu', this.w / 2, this.h / 2 + 90, 16, '#aaa');
+        this.drawEndScreen('YOU WIN!', '#FFD400');
       }
+    }
+
+    drawEndScreen(title, color) {
+      const cx = this.w / 2;
+      this.text(title, cx, 80, 52, color);
+      this.text(`YOUR SCORE  ${String(this.score).padStart(6, '0')}`, cx, 128, 22, '#fff');
+
+      if (this.awaitingName) {
+        this.text('NEW HIGH SCORE!', cx, 200, 28, '#FFD400');
+        this.text('digite seu nome abaixo e tecle Enter', cx, 240, 14, '#aaa');
+        return; // the DOM input overlay is shown over the canvas center
+      }
+
+      this.text('HIGH SCORES', cx, 180, 20, '#FFD400');
+      const list = this.scores || [];
+      if (!list.length) {
+        this.text('(sem pontuações ainda)', cx, 220, 15, '#888');
+      } else {
+        let y = 212;
+        for (let i = 0; i < list.length; i++) {
+          const e = list[i];
+          const mine = e.score === this.score;
+          const rowColor = mine ? '#FFD400' : '#ddd';
+          this.text(`${String(i + 1).padStart(2, ' ')}. ${e.name}`, cx - 170, y, 16, rowColor, 'left');
+          this.text(String(e.score).padStart(6, '0'), cx + 170, y, 16, rowColor, 'right');
+          y += 26;
+        }
+      }
+      this.text('Press any key for menu', cx, this.h - 44, 16, '#aaa');
     }
 
     drawMenu() {
       const ctx = this.ctx;
       this.text('AXIS INVADERS', this.w / 2, this.h / 2 - 90, 60, '#fff');
       this.text('a tiny invasion in three flavors', this.w / 2, this.h / 2 - 40, 16, '#888');
-      this.text('Cage Rage  -  R8 Velocity  -  Samba Storm', this.w / 2, this.h / 2 + 0, 16, '#aaa');
+      this.text('Cage Rage  -  BYD Velocity  -  Samba Storm', this.w / 2, this.h / 2 + 0, 16, '#aaa');
       const blink = (Math.floor(performance.now() / 500) % 2) === 0;
-      if (blink) this.text('PRESS ENTER', this.w / 2, this.h / 2 + 80, 26, '#FFD400');
-      this.text('arrows / A D : move    Space : fire    P : pause', this.w / 2, this.h - 40, 13, '#666');
+      if (blink) this.text('PRESS ANY BUTTON TO START', this.w / 2, this.h / 2 + 80, 26, '#FFD400');
+      this.text('arrows / WASD : move    Space : fire    P : pause', this.w / 2, this.h - 40, 13, '#666');
+    }
+
+    drawSelect() {
+      const ctx = this.ctx;
+      if (!this.shipPreviews) {
+        this.shipPreviews = {};
+        for (const id of ns.ships.order) {
+          this.shipPreviews[id] = ns.sprites.buildShipPreview(id);
+        }
+      }
+      const bars = ns.ships.statBars();
+
+      this.text('SELECT YOUR SHIP', this.w / 2, 70, 40, '#fff');
+      this.text('← →  escolher    Space / Enter  confirmar', this.w / 2, 110, 15, '#888');
+
+      const n = ns.ships.order.length;
+      const slotW = this.w / n;
+      for (let i = 0; i < n; i++) {
+        const id = ns.ships.order[i];
+        const def = ns.ships.defs[id];
+        const cx = slotW * i + slotW / 2;
+        const selected = i === this.selIdx;
+
+        // Card backdrop + highlight for the active selection.
+        const cardW = slotW - 36;
+        const cardX = cx - cardW / 2;
+        const cardY = 150;
+        const cardH = 300;
+        ctx.fillStyle = selected ? 'rgba(255,212,0,0.10)' : 'rgba(255,255,255,0.04)';
+        ctx.fillRect(cardX, cardY, cardW, cardH);
+        ctx.strokeStyle = selected ? '#FFD400' : 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = selected ? 3 : 1;
+        ctx.strokeRect(cardX, cardY, cardW, cardH);
+
+        // Ship sprite, centered near the top of the card.
+        const spr = this.shipPreviews[id];
+        ctx.drawImage(spr, cx - spr.width / 2, cardY + 40 - spr.height / 2);
+
+        this.text(def.name, cx, cardY + 110, 30, selected ? '#FFD400' : '#fff');
+        this.text(def.desc, cx, cardY + 140, 13, '#aaa');
+
+        // Stat bars.
+        this.drawStatBar('SPEED', cardX + 20, cardY + 175, cardW - 40, bars[id].speed);
+        this.drawStatBar('FIRE',  cardX + 20, cardY + 215, cardW - 40, bars[id].fireRate);
+      }
+
+      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
+      if (blink) {
+        this.text('PRESS SPACE TO LAUNCH', this.w / 2, this.h - 60, 22, '#FFD400');
+      }
+    }
+
+    drawStatBar(label, x, y, w, ratio) {
+      const ctx = this.ctx;
+      this.text(label, x, y, 12, '#888', 'left');
+      const barX = x;
+      const barY = y + 10;
+      const barW = w;
+      const barH = 8;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = '#3eff70';
+      ctx.fillRect(barX, barY, Math.max(4, barW * ratio), barH);
     }
 
     drawIntro(stage) {
