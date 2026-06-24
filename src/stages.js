@@ -5,7 +5,7 @@
     {
       name: 'CAGE RAGE',
       subtitle: 'Stage 1 — dramatic mayhem',
-      story: 'Você deixou seu PC desbloqueado! Nicholas Cage quer possuir tua máquina, impeça que ele consiga!',
+      story: 'Você deixou seu PC desbloqueado! Nicholas Cage quer possuir tua máquina!',
       bgColor: '#0a0303',
       rows: 5,
       cols: 8,
@@ -28,7 +28,7 @@
     {
       name: 'BYD VELOCITY',
       subtitle: 'Stage 2 — BYD pursuit',
-      story: 'Você veio de carro para o escritório! Vai pegar muito trânsito se não vier de bike ou busão!',
+      story: 'Você veio de carro para o escritório! Encare o trânsito!',
       bgColor: '#02060a',
       rows: 5,
       cols: 9,
@@ -50,9 +50,9 @@
       }
     },
     {
-      name: 'SAMBA STORM',
+      name: 'SAMBA AGREGADO INFORMAL',
       subtitle: 'Stage 3 — enSAI de quinta',
-      story: 'Você foi pro happy hour pra fazer um samba com o time, vai ser enquadrado!',
+      story: 'Happy hour com o time! O samba rola solto até a viatura aparecer',
       bgColor: '#040a04',
       rows: 6,
       cols: 10,
