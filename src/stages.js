@@ -4,7 +4,7 @@
   ns.stages = [
     {
       name: 'CAGE RAGE',
-      subtitle: 'Stage 1 — dramatic mayhem',
+      subtitle: 'Stage 1 — Nicholas Cage invasion',
       story: 'Você deixou seu PC desbloqueado! Nicholas Cage quer possuir tua máquina!',
       bgColor: '#0a0303',
       rows: 5,
