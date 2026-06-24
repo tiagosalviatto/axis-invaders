@@ -1,7 +1,10 @@
 (function () {
   const ns = (window.AxisInvaders = window.AxisInvaders || {});
 
-  const STATES = { MENU: 'menu', SELECT: 'select', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win' };
+  const STATES = { MENU: 'menu', SELECT: 'select', STORY: 'story', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win' };
+
+  const STORY_CPS = 38;            // typewriter speed (characters per second)
+  const STORY_AUTO_ADVANCE = 6;    // seconds after the text completes before auto-advancing
 
   class Game {
     constructor(canvas) {
@@ -28,6 +31,10 @@
       this.flash = 0;
       this.paused = false;
       this.bgState = {};
+
+      // Narrative transition (STORY state)
+      this.storyT = 0;       // seconds elapsed in the current story screen
+      this.storyAutoT = 0;   // auto-advance timer once the text is fully revealed
 
       // Scoring / high-score table
       this.stageTime = 0;      // seconds elapsed in the current stage (PLAY only)
@@ -57,11 +64,20 @@
       this.bullets.length = 0;
       this.particles.length = 0;
       this.bgState = {};
-      this.state = STATES.INTRO;
-      this.introTime = 1.8;
       this.paused = false;
       this.stageTime = 0;
+      // Open with the narrative transition; gameplay board is built and waiting behind it.
+      this.state = STATES.STORY;
+      this.storyT = 0;
+      this.storyAutoT = 0;
       ns.audio.playStageMotif(idx);
+    }
+
+    // Short "get ready" beat after the story screen: the name flashes over the
+    // live board before enemies start acting.
+    beginIntro() {
+      this.state = STATES.INTRO;
+      this.introTime = 1.2;
     }
 
     startGame() {
@@ -146,6 +162,21 @@
         if (ns.input.consumePress('Space') || ns.input.consumePress('Enter')) {
           this.shipId = ns.ships.order[this.selIdx];
           this.startGame();
+        }
+        return;
+      }
+
+      if (this.state === STATES.STORY) {
+        this.storyT += dt;
+        const text = stage.story || '';
+        const full = this.storyT * STORY_CPS >= text.length;
+        if (ns.input.consumeAnyPress()) {
+          if (!full) this.storyT = text.length / STORY_CPS + 0.01; // 1st key: reveal all text
+          else this.beginIntro();                                  // 2nd key: start the stage
+        }
+        if (full) {
+          this.storyAutoT += dt;
+          if (this.storyAutoT > STORY_AUTO_ADVANCE) this.beginIntro();
         }
         return;
       }
@@ -349,6 +380,11 @@
         return;
       }
 
+      if (this.state === STATES.STORY) {
+        this.drawStory(stage);
+        return;
+      }
+
       if (this.state === STATES.PLAY || this.state === STATES.INTRO) {
         this.player.draw(ctx);
         this.grid.draw(ctx);
@@ -414,11 +450,11 @@
     drawMenu() {
       const ctx = this.ctx;
       this.text('AXIS INVADERS', this.w / 2, this.h / 2 - 90, 60, '#fff');
-      this.text('a tiny invasion in three flavors', this.w / 2, this.h / 2 - 40, 16, '#888');
-      this.text('Cage Rage  -  BYD Velocity  -  Samba Storm', this.w / 2, this.h / 2 + 0, 16, '#aaa');
+      this.text('Beware of the dangers lurking about', this.w / 2, this.h / 2 - 40, 16, '#888');
+      this.text('Nicholas Cage  -  BYD no trânsito  -  Samba Agregado', this.w / 2, this.h / 2 + 0, 16, '#aaa');
       const blink = (Math.floor(performance.now() / 500) % 2) === 0;
       if (blink) this.text('PRESS ANY BUTTON TO START', this.w / 2, this.h / 2 + 80, 26, '#FFD400');
-      this.text('arrows / WASD : move    Space : fire    P : pause', this.w / 2, this.h - 40, 13, '#666');
+      this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.h - 40, 13, '#666');
     }
 
     drawSelect() {
@@ -482,6 +518,83 @@
       ctx.fillRect(barX, barY, barW, barH);
       ctx.fillStyle = '#3eff70';
       ctx.fillRect(barX, barY, Math.max(4, barW * ratio), barH);
+    }
+
+    drawStory(stage) {
+      const ctx = this.ctx;
+      const cx = this.w / 2;
+      const pal = ns.sprites.PALETTES[this.stageIdx] || [null, '#fff', '#ccc', '#fff'];
+      const accent = pal[3] || pal[1] || '#FFD400';
+      const t = this.storyT;
+
+      // Dark panel over the animated themed background.
+      ctx.fillStyle = 'rgba(0,0,0,0.62)';
+      ctx.fillRect(0, 0, this.w, this.h);
+
+      // Boss looming at the top: fade-in + slide-down + gentle bob.
+      if (this.sprites && this.sprites.boss) {
+        const boss = this.sprites.boss;
+        const appear = Math.min(1, t / 0.6);
+        const scale = Math.min(1, 320 / boss.width, 200 / boss.height);
+        const bw = boss.width * scale, bh = boss.height * scale;
+        const by = 64 - (1 - appear) * 40 + Math.sin(t * 2) * 6;
+        ctx.save();
+        ctx.globalAlpha = appear;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(boss, cx - bw / 2, by, bw, bh);
+        ctx.restore();
+      }
+
+      // Level badge + stage name + accent divider.
+      this.text(`NÍVEL ${this.stageIdx + 1}`, cx, 300, 18, accent);
+      this.text(stage.name, cx, 332, 34, '#fff');
+      ctx.fillStyle = accent;
+      ctx.fillRect(cx - 120, 350, 240, 2);
+
+      // Narrative text with typewriter reveal + blinking cursor while typing.
+      const text = stage.story || '';
+      const shown = Math.min(text.length, Math.floor(t * STORY_CPS));
+      const full = shown >= text.length;
+      const lines = this.wrapLines(text.slice(0, shown), this.w - 160, 19);
+      const cursor = (!full && (Math.floor(performance.now() / 250) % 2 === 0)) ? '▌' : '';
+      if (cursor) {
+        if (lines.length) lines[lines.length - 1] += cursor;
+        else lines.push(cursor);
+      }
+      let ty = 386;
+      for (const ln of lines) { this.text(ln, cx, ty, 19, '#eaeaea'); ty += 28; }
+
+      // Player ship sliding up from the bottom.
+      if (this.sprites && this.sprites.player) {
+        const ship = this.sprites.player;
+        const appear = Math.min(1, t / 0.8);
+        const sy = (this.h - 70) + (1 - appear) * 50;
+        ctx.save();
+        ctx.globalAlpha = appear;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(ship, cx - ship.width / 2, sy);
+        ctx.restore();
+      }
+
+      // Prompt once the text is fully revealed.
+      if (full && (Math.floor(performance.now() / 450) % 2 === 0)) {
+        this.text('press any key  ▸', cx, this.h - 24, 15, accent);
+      }
+    }
+
+    // Greedy word-wrap measured against the current monospace font.
+    wrapLines(str, maxWidth, size) {
+      const ctx = this.ctx;
+      ctx.font = `bold ${size}px "Courier New", Consolas, monospace`;
+      const lines = [];
+      let cur = '';
+      for (const word of str.split(' ')) {
+        const test = cur ? cur + ' ' + word : word;
+        if (cur && ctx.measureText(test).width > maxWidth) { lines.push(cur); cur = word; }
+        else cur = test;
+      }
+      if (cur) lines.push(cur);
+      return lines;
     }
 
     drawIntro(stage) {
