@@ -252,6 +252,10 @@
       this.cfg = cfg;
       this.fireTimer = (cfg.fireMs || 1400) / 1000;
       this.flashTimer = 0;
+      this.hitGlow = 0;          // additive impact glow timer
+      this.hitX = 0;
+      this.hitY = 0;
+      this._silhouette = null;   // cached white silhouette of the sprite
       this.beam = null;
       this.sirenT = 0;
       this.sirenLeft = true;
@@ -266,29 +270,57 @@
         this.vx = -Math.abs(this.vx);
       }
       if (this.flashTimer > 0) this.flashTimer -= dt;
+      if (this.hitGlow > 0) this.hitGlow -= dt;
       const fn = bossBehaviors[this.behaviorKey];
       return fn ? fn(this, dt) : null;
     }
 
-    hit() {
+    hit(hx, hy) {
       this.hp -= 1;
       this.flashTimer = 0.1;
+      this.hitGlow = 0.15;
+      if (hx != null) { this.hitX = hx; this.hitY = hy; }
       if (this.hp <= 0) this.alive = false;
     }
 
     draw(ctx) {
       // Police halo sits behind the letters so they stay readable on top
-      // of the flashing red/blue glow.
+      // of the flashing red/blue glow. Drawn unscaled, behind the pop.
       if (this.behaviorKey === 'police') drawPoliceSirens(ctx, this);
+
+      // Sprite (+ silhouette flash) get a brief scale "pop" on hit, around
+      // the boss center. HP bar and impact glow stay unscaled.
+      const pop = this.flashTimer > 0 ? 1 + (this.flashTimer / 0.1) * 0.07 : 1;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      if (pop !== 1) {
+        const cx = this.x + this.w / 2, cy = this.y + this.h / 2;
+        ctx.translate(cx, cy); ctx.scale(pop, pop); ctx.translate(-cx, -cy);
+      }
       ctx.drawImage(this.bitmap, this.x | 0, this.y | 0);
       if (this.flashTimer > 0) {
+        // White flash clipped to the sprite's own silhouette (no square).
+        if (!this._silhouette) this._silhouette = buildWhiteSilhouette(this.bitmap);
+        ctx.globalAlpha = Math.min(1, this.flashTimer / 0.1) * 0.7;
+        ctx.drawImage(this._silhouette, this.x | 0, this.y | 0);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+
+      // Warm additive glow at the bullet impact point.
+      if (this.hitGlow > 0) {
+        const a = this.hitGlow / 0.15;
+        const r = 26;
         ctx.save();
-        ctx.globalCompositeOperation = 'source-atop';
-        const a = Math.min(1, this.flashTimer / 0.1) * 0.65;
-        ctx.fillStyle = `rgba(255,255,255,${a})`;
-        ctx.fillRect(this.x | 0, this.y | 0, this.w, this.h);
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(this.hitX, this.hitY, 0, this.hitX, this.hitY, r);
+        g.addColorStop(0, `rgba(255,240,180,${0.85 * a})`);
+        g.addColorStop(1, 'rgba(255,180,60,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(this.hitX - r, this.hitY - r, r * 2, r * 2);
         ctx.restore();
       }
+
       drawHpBar(ctx, this);
     }
 
@@ -323,6 +355,21 @@
       const yTop = this.y + this.h;
       return { x: this.beam.x - 11, y: yTop, w: 22, h: canvasH - yTop };
     }
+  }
+
+  // Bake a solid-white version of a sprite that preserves its alpha shape, so
+  // a hit flash follows the silhouette instead of a bounding rectangle.
+  function buildWhiteSilhouette(bitmap) {
+    const c = document.createElement('canvas');
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const cx = c.getContext('2d');
+    cx.imageSmoothingEnabled = false;
+    cx.drawImage(bitmap, 0, 0);
+    cx.globalCompositeOperation = 'source-in'; // keep fill only where sprite is opaque
+    cx.fillStyle = '#ffffff';
+    cx.fillRect(0, 0, c.width, c.height);
+    return c;
   }
 
   function drawHpBar(ctx, boss) {

@@ -264,7 +264,7 @@
           }
           if (!hit && this.boss && this.boss.alive && ns.entities.aabb(b, this.boss)) {
             b.alive = false;
-            this.boss.hit();
+            this.boss.hit(b.x + b.w / 2, b.y);
             this.score += 50;
             ns.entities.spawnExplosion(
               this.particles,
