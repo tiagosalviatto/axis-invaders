@@ -1,5 +1,9 @@
 # Axis Invaders — Edifício Eixo
 
+<p align="center">
+  <img src="assets/title.gif" width="480" alt="Tela inicial do Axis Invaders">
+</p>
+
 Um *Space Invaders* de navegador, em pixel art, que (com bom humor) **prepara os jogadores
 para o dia-a-dia no edifício Eixo**. Cada fase encena uma situação real da rotina do prédio —
 e cada chefão é uma lição disfarçada de mini-boss. *Axis* = *Eixo*: defenda o seu posto.
