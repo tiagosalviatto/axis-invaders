@@ -1,7 +1,7 @@
 (function () {
   const ns = (window.AxisInvaders = window.AxisInvaders || {});
 
-  const STATES = { MENU: 'menu', SELECT: 'select', STORY: 'story', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win' };
+  const STATES = { MENU: 'menu', SELECT: 'select', STORY: 'story', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win', RANKING: 'ranking' };
 
   const STORY_CPS = 38;            // typewriter speed (characters per second)
   const STORY_AUTO_ADVANCE = 6;    // seconds after the text completes before auto-advancing
@@ -28,6 +28,7 @@
       this.bosses = [];          // active bosses (usually 1; 2 in the police phase 2)
       this.policePhase2 = false; // viatura already split into officers?
       this.reinforcements = 0;   // "REFORÇOS!" banner timer
+      this.rankingFrom = STATES.MENU; // where the ranking screen returns to
       this.sprites = null;
       this.introTime = 0;
       this.flash = 0;
@@ -163,17 +164,28 @@
       this.bosses.push(make('spread', this.w * 0.70, Math.PI, 1300, 280));
     }
 
-    // Transition into an end screen. Only finishers (WIN) are recorded — they
-    // get the name prompt; OVER just shows the global ranking read-only.
+    // Transition into an end screen. Only finishers (WIN) are recorded and see
+    // the ranking inline; OVER shows just the "clock out" message (the ranking
+    // is reachable from there via R).
     endGame(state) {
       this.state = state;
       this.scores = [];
-      this.boardLoading = true;
+      this.boardLoading = false;
       this.boardOffline = false;
       this.submitting = false;
       this.myEntryKey = null;
       this.awaitingName = (state === STATES.WIN);
       if (this.awaitingName) this.showNameEntry();
+      else this.hideNameEntry();
+    }
+
+    // Open the global high-scores screen, remembering where to return to.
+    openRanking(fromState) {
+      ns.audio.enable();
+      this.rankingFrom = fromState;
+      this.state = STATES.RANKING;
+      this.scores = [];
+      this.boardLoading = true;
       ns.scoreboard.fetchTop().then(list => {
         this.scores = list;
         this.boardLoading = false;
@@ -218,12 +230,18 @@
       const stage = ns.stages[this.stageIdx];
 
       if (this.state === STATES.MENU) {
+        if (ns.input.consumePress('KeyR')) { this.openRanking(STATES.MENU); return; }
         if (ns.input.consumeAnyPress()) {
           ns.audio.enable();
           this.selIdx = ns.ships.order.indexOf(this.shipId);
           if (this.selIdx < 0) this.selIdx = 0;
           this.state = STATES.SELECT;
         }
+        return;
+      }
+
+      if (this.state === STATES.RANKING) {
+        if (ns.input.consumeAnyPress()) this.state = this.rankingFrom || STATES.MENU;
         return;
       }
 
@@ -259,9 +277,16 @@
         return;
       }
 
-      if (this.state === STATES.OVER || this.state === STATES.WIN) {
-        if (this.awaitingName) return; // block menu until the name is submitted
+      if (this.state === STATES.WIN) {
+        if (this.awaitingName) return; // block until the name is submitted
+        if (ns.input.consumePress('KeyR')) { this.openRanking(STATES.WIN); return; }
         if (ns.input.consumeAnyPress()) this.state = STATES.MENU;
+        return;
+      }
+
+      if (this.state === STATES.OVER) {
+        if (ns.input.consumePress('KeyR')) { this.openRanking(STATES.OVER); return; }
+        if (ns.input.consumePress('Space')) this.state = STATES.MENU;
         return;
       }
 
@@ -484,58 +509,72 @@
         return;
       }
 
-      if (this.state === STATES.OVER) {
-        this.drawEndScreen('GAME OVER', '#FF3030');
-      }
-
-      if (this.state === STATES.WIN) {
-        this.drawEndScreen('YOU WIN!', '#FFD400');
-      }
+      if (this.state === STATES.OVER) { this.drawGameOver(); return; }
+      if (this.state === STATES.WIN) { this.drawWin(); return; }
+      if (this.state === STATES.RANKING) { this.drawRanking(); return; }
     }
 
-    drawEndScreen(title, color) {
+    // Game over: a simple themed message, no ranking inline (R opens it).
+    drawGameOver() {
       const cx = this.w / 2;
-      this.text(title, cx, 80, 52, color);
-      this.text(`YOUR SCORE  ${String(this.score).padStart(6, '0')}`, cx, 128, 22, '#fff');
+      this.text('GAME OVER', cx, this.h / 2 - 90, 58, '#FF3030');
+      this.text('bata o ponto e tente novamente amanhã', cx, this.h / 2 - 28, 19, '#fff');
+      this.text(`SCORE  ${String(this.score).padStart(6, '0')}`, cx, this.h / 2 + 12, 18, '#aaa');
+      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
+      if (blink) this.text('SPACE: voltar ao início', cx, this.h / 2 + 78, 22, '#FFD400');
+      this.text('R: ver ranking global', cx, this.h / 2 + 116, 16, '#9cf');
+    }
 
+    // Win: finisher registers a name, then sees the global ranking inline.
+    drawWin() {
+      const cx = this.w / 2;
+      this.text('YOU WIN!', cx, 70, 50, '#FFD400');
+      this.text(`YOUR SCORE  ${String(this.score).padStart(6, '0')}`, cx, 112, 20, '#fff');
       if (this.awaitingName) {
-        this.text('VOCÊ CHEGOU AO FIM!', cx, 200, 28, '#FFD400');
-        this.text('registre seu nome no ranking — digite e tecle Enter', cx, 240, 13, '#aaa');
+        this.text('VOCÊ CHEGOU AO FIM!', cx, 172, 26, '#FFD400');
+        this.text('registre seu nome no ranking — digite e tecle Enter', cx, 208, 13, '#aaa');
         return; // the DOM input overlay is shown over the canvas center
       }
-
       this.text('RANKING GLOBAL', cx, 152, 18, '#FFD400');
-
-      if (this.boardLoading) {
-        this.text('carregando…', cx, 210, 16, '#aaa');
-      } else {
-        const list = this.scores || [];
-        if (!list.length) {
-          this.text('(sem pontuações ainda)', cx, 210, 15, '#888');
-        } else {
-          const top = 182;
-          this.text('#',     cx - 250, top, 12, '#777', 'left');
-          this.text('NOME',  cx - 215, top, 12, '#777', 'left');
-          this.text('NAVE',  cx + 35,  top, 12, '#777', 'left');
-          this.text('TEMPO', cx + 130, top, 12, '#777', 'left');
-          this.text('SCORE', cx + 250, top, 12, '#777', 'right');
-          let y = top + 24;
-          for (let i = 0; i < list.length && y < this.h - 70; i++) {
-            const e = list[i];
-            const key = e.name + '|' + e.score + '|' + e.ship;
-            const rowColor = (this.myEntryKey && key === this.myEntryKey) ? '#FFD400' : '#ddd';
-            this.text(String(i + 1).padStart(2, ' '), cx - 250, y, 15, rowColor, 'left');
-            this.text(e.name, cx - 215, y, 15, rowColor, 'left');
-            this.text(e.ship || '-', cx + 35, y, 15, rowColor, 'left');
-            this.text(this.fmtTime(e.total_time), cx + 130, y, 15, rowColor, 'left');
-            this.text(String(e.score).padStart(6, '0'), cx + 250, y, 15, rowColor, 'right');
-            y += 24;
-          }
-        }
-      }
-
+      this.drawScoreTable(182);
       if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 62, 12, '#d99');
-      this.text('Press any key for menu', cx, this.h - 38, 16, '#aaa');
+      this.text('SPACE: menu     R: ranking', cx, this.h - 38, 15, '#aaa');
+    }
+
+    // Standalone global high-scores screen (reachable from menu / game over).
+    drawRanking() {
+      const cx = this.w / 2;
+      this.text('RANKING GLOBAL', cx, 66, 40, '#FFD400');
+      this.text('os melhores que bateram o ponto', cx, 104, 14, '#888');
+      this.drawScoreTable(146);
+      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
+      if (blink) this.text('aperte qualquer tecla para voltar', cx, this.h - 38, 16, '#aaa');
+    }
+
+    // Shared high-scores table; `top` is the header baseline. Handles the
+    // loading and empty states too.
+    drawScoreTable(top) {
+      const cx = this.w / 2;
+      if (this.boardLoading) { this.text('carregando…', cx, top + 30, 16, '#aaa'); return; }
+      const list = this.scores || [];
+      if (!list.length) { this.text('(sem pontuações ainda)', cx, top + 30, 15, '#888'); return; }
+      this.text('#',     cx - 250, top, 12, '#777', 'left');
+      this.text('NOME',  cx - 215, top, 12, '#777', 'left');
+      this.text('NAVE',  cx + 35,  top, 12, '#777', 'left');
+      this.text('TEMPO', cx + 130, top, 12, '#777', 'left');
+      this.text('SCORE', cx + 250, top, 12, '#777', 'right');
+      let y = top + 24;
+      for (let i = 0; i < list.length && y < this.h - 70; i++) {
+        const e = list[i];
+        const key = e.name + '|' + e.score + '|' + e.ship;
+        const rowColor = (this.myEntryKey && key === this.myEntryKey) ? '#FFD400' : '#ddd';
+        this.text(String(i + 1).padStart(2, ' '), cx - 250, y, 15, rowColor, 'left');
+        this.text(e.name, cx - 215, y, 15, rowColor, 'left');
+        this.text(e.ship || '-', cx + 35, y, 15, rowColor, 'left');
+        this.text(this.fmtTime(e.total_time), cx + 130, y, 15, rowColor, 'left');
+        this.text(String(e.score).padStart(6, '0'), cx + 250, y, 15, rowColor, 'right');
+        y += 24;
+      }
     }
 
     fmtTime(s) {
@@ -549,7 +588,8 @@
       this.text('Beware of the dangers lurking about', this.w / 2, this.h / 2 - 40, 16, '#888');
       this.text('Nicholas Cage  -  BYD no trânsito  -  Samba Agregado', this.w / 2, this.h / 2 + 0, 16, '#aaa');
       const blink = (Math.floor(performance.now() / 500) % 2) === 0;
-      if (blink) this.text('PRESS ANY BUTTON TO START', this.w / 2, this.h / 2 + 80, 26, '#FFD400');
+      if (blink) this.text('PRESS SPACE TO START', this.w / 2, this.h / 2 + 72, 26, '#FFD400');
+      this.text('R = ranking global', this.w / 2, this.h / 2 + 110, 15, '#9cf');
       this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.h - 40, 13, '#666');
     }
 
