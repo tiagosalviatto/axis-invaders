@@ -52,7 +52,7 @@
     {
       name: 'SAMBA AGREGADO INFORMAL',
       subtitle: 'Stage 3 — enSAI de quinta',
-      story: 'Happy hour com o time! O samba rola solto até a viatura aparecer',
+      story: 'Happy hour com o time! O samba rola até o rapa aparecer.',
       bgColor: '#040a04',
       rows: 6,
       cols: 10,
