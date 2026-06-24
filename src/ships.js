@@ -7,8 +7,8 @@
   //  - bulletSpeedMul: extra multiplier on player bullet travel speed
   // BS is the balanced baseline (mirrors the original hardcoded values).
   const defs = {
-    BS:   { id: 'BS',   name: 'BS',   desc: 'Equilibrada?',         speed: 300, cooldownMax: 0.28, bulletSpeedMul: 1.0 },
-    PC:   { id: 'PC',   name: 'PC',   desc: 'Ágilizada',   speed: 430, cooldownMax: 0.40, bulletSpeedMul: 1.15 },
+    BS:   { id: 'BS',   name: 'BS',   desc: 'Equilibrada (?)',         speed: 300, cooldownMax: 0.28, bulletSpeedMul: 1.0 },
+    PC:   { id: 'PC',   name: 'PC',   desc: 'Agilizada',   speed: 430, cooldownMax: 0.40, bulletSpeedMul: 1.15 },
     ARTY: { id: 'ARTY', name: 'ARTY', desc: 'Potente', speed: 190, cooldownMax: 0.18, bulletSpeedMul: 0.85 }
   };
 
