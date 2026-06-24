@@ -69,6 +69,25 @@
     "..333.."
   ];
 
+  // Police phase-2 projectiles. DART = guided shot (aiming officer);
+  // BOLT = spread shot (flanking officer). Baked with the red/blue palettes.
+  const POLICE_DART = [
+    "..1..",
+    ".111.",
+    "11211",
+    ".121.",
+    ".121.",
+    "..1..",
+    "..1.."
+  ];
+  const POLICE_BOLT = [
+    ".111.",
+    "12321",
+    "13231",
+    "12321",
+    ".111."
+  ];
+
   // STAGE 1 - Cage Rage: dramatic faces and a swarming bee
   const CAGE_A = [
     "..1111111..",
@@ -302,9 +321,10 @@
   // is missing or fails to load, buildStageSprites falls back to the
   // typographic label so the game still runs.
   const BOSS_IMAGE_SRC = {
-    cage:   'assets/bosses/cage.png',
-    byd:    'assets/bosses/byd.png',
-    police: 'assets/bosses/viatura.png'
+    cage:    'assets/bosses/cage.png',
+    byd:     'assets/bosses/byd.png',
+    police:  'assets/bosses/viatura.png',
+    officer: 'assets/bosses/policia.png'
   };
   const bossImages = Object.create(null);
 
@@ -364,7 +384,11 @@
       bossKey,
       bigEnemyBullet: bake(BIG_ENEMY_BULLET, pal, SCALE),
       redBullet: bake(ENEMY_BULLET, RED_BULLET_PAL, SCALE),
-      blueBullet: bake(ENEMY_BULLET, BLUE_BULLET_PAL, SCALE)
+      blueBullet: bake(ENEMY_BULLET, BLUE_BULLET_PAL, SCALE),
+      // Phase-2 police officers (stage 3): sprite + dedicated projectiles.
+      officer: bossImages.officer || bossImages.police || buildBossLabel(BOSS_LABELS.police),
+      officerBulletRed: bake(POLICE_DART, RED_BULLET_PAL, SCALE),
+      officerBulletBlue: bake(POLICE_BOLT, BLUE_BULLET_PAL, SCALE)
     };
   }
 

@@ -251,6 +251,7 @@
       this.behaviorKey = cfg.behaviorKey;
       this.cfg = cfg;
       this.fireTimer = (cfg.fireMs || 1400) / 1000;
+      this.t = 0;                // running clock (hover bob, etc.)
       this.flashTimer = 0;
       this.hitGlow = 0;          // additive impact glow timer
       this.hitX = 0;
@@ -262,6 +263,7 @@
     }
 
     update(dt) {
+      this.t += dt;
       this.x += this.vx * dt;
       const margin = 10;
       if (this.x < margin) { this.x = margin; this.vx = Math.abs(this.vx); }
@@ -476,6 +478,37 @@
         };
       }
       return null;
+    },
+
+    // Phase-2 police officers. Each hovers around its home spot and fires:
+    // role 'aim' tracks the player (guided shot); role 'spread' lobs a 3-bolt fan.
+    officer(boss, dt) {
+      boss.x = boss.homeX + Math.sin(boss.t * 1.3 + boss.phase) * 22;
+      boss.y = boss.homeY + Math.sin(boss.t * 2.1 + boss.phase) * 10;
+
+      boss.fireTimer -= dt;
+      if (boss.fireTimer > 0) return null;
+      boss.fireTimer = (boss.cfg.fireMs || 1000) / 1000;
+
+      const mx = boss.x + boss.w / 2;
+      const my = boss.y + boss.h - 6;
+
+      if (boss.role === 'aim' && boss.target) {
+        const tx = boss.target.x + boss.target.w / 2;
+        const ty = boss.target.y + boss.target.h / 2;
+        let dx = tx - mx, dy = ty - my;
+        const d = Math.hypot(dx, dy) || 1;
+        const sp = boss.cfg.bulletSpeed || 300;
+        return { kind: 'shot', x: mx, y: my, vx: dx / d * sp, vy: dy / d * sp, sprite: boss.cfg.aimSprite };
+      }
+
+      const sp = boss.cfg.bulletSpeed || 280;
+      const sprite = boss.cfg.spreadSprite;
+      return [
+        { kind: 'shot', x: mx, y: my, vx: -90, vy: sp, sprite },
+        { kind: 'shot', x: mx, y: my, vx: 0,   vy: sp, sprite },
+        { kind: 'shot', x: mx, y: my, vx: 90,  vy: sp, sprite }
+      ];
     }
   };
 

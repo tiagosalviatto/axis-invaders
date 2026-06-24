@@ -25,7 +25,9 @@
       this.particles = [];
       this.player = null;
       this.grid = null;
-      this.boss = null;
+      this.bosses = [];          // active bosses (usually 1; 2 in the police phase 2)
+      this.policePhase2 = false; // viatura already split into officers?
+      this.reinforcements = 0;   // "REFORÇOS!" banner timer
       this.sprites = null;
       this.introTime = 0;
       this.flash = 0;
@@ -64,7 +66,9 @@
         this.w, this.h, this.sprites.player, ns.ships.defs[this.shipId]
       );
       this.grid = new ns.entities.EnemyGrid(stage, this.sprites, this.w);
-      this.boss = null;
+      this.bosses.length = 0;
+      this.policePhase2 = false;
+      this.reinforcements = 0;
       this.bullets.length = 0;
       this.particles.length = 0;
       this.bgState = {};
@@ -102,6 +106,61 @@
       const speedBonus = Math.max(0, Math.round((par - this.stageTime) * 20));
       this.score += speedBonus;
       this.stageTimes.push(Math.round(this.stageTime * 10) / 10);
+    }
+
+    // Explosion palette for a boss death/hit, keyed by behavior.
+    bossPalette(boss) {
+      if (boss.behaviorKey === 'cage') return ['#FFD45A', '#C8102E', '#FFFFFF'];
+      if (boss.behaviorKey === 'byd')  return ['#D8D8D8', '#FF1418', '#FFFFFF'];
+      return ['#3050FF', '#FF2030', '#FFFFFF']; // police + officers
+    }
+
+    // Called when a boss reaches 0 HP. Awards the kill and, for the viatura,
+    // triggers phase 2: it splits into two hovering police officers.
+    onBossDefeated(boss) {
+      ns.entities.spawnBigExplosion(
+        this.particles,
+        boss.x + boss.w / 2, boss.y + boss.h / 2,
+        ['#FFD400', '#FF3030', '#FFFFFF', '#FFA040']
+      );
+      this.score += 200;
+      this.flash = 0.25;
+      if (boss.behaviorKey === 'police' && !this.policePhase2) {
+        this.policePhase2 = true;
+        this.spawnPoliceOfficers();
+        this.flash = 0.45;
+        this.reinforcements = 1.8;
+        ns.audio.playHit();
+      }
+    }
+
+    // Spawn the two phase-2 officers: a left "aim" officer that tracks the
+    // player and a right "spread" officer. Each hovers around its home spot.
+    spawnPoliceOfficers() {
+      const make = (role, centerX, phase, fireMs, speed) => {
+        const o = new ns.entities.Boss({
+          behaviorKey: 'officer',
+          role,
+          name: 'POLICIAL',
+          hp: 12,
+          vx: 0,
+          fireMs,
+          bulletSpeed: speed,
+          bitmap: this.sprites.officer,
+          aimSprite: this.sprites.officerBulletRed,
+          spreadSprite: this.sprites.officerBulletBlue
+        }, this.w);
+        o.role = role;
+        o.homeX = centerX - o.w / 2;
+        o.homeY = 72;
+        o.x = o.homeX;
+        o.y = o.homeY;
+        o.phase = phase;
+        o.target = this.player;
+        return o;
+      };
+      this.bosses.push(make('aim', this.w * 0.30, 0, 1100, 320));
+      this.bosses.push(make('spread', this.w * 0.70, Math.PI, 1300, 280));
     }
 
     // Transition into an end screen. Only finishers (WIN) are recorded — they
@@ -243,9 +302,10 @@
       }
 
       // Boss update + attack events. Behaviors may return a single shot
-      // event or an array of shots (e.g. Cage's three-bullet fan).
-      if (this.boss && this.boss.alive) {
-        const ev = this.boss.update(dt);
+      // event or an array of shots (e.g. Cage's fan, officers' spread).
+      for (const boss of this.bosses) {
+        if (!boss.alive) continue;
+        const ev = boss.update(dt);
         if (ev) {
           const shots = Array.isArray(ev) ? ev : [ev];
           for (const s of shots) {
@@ -281,27 +341,17 @@
               break;
             }
           }
-          if (!hit && this.boss && this.boss.alive && ns.entities.aabb(b, this.boss)) {
-            b.alive = false;
-            this.boss.hit(b.x + b.w / 2, b.y);
-            this.score += 50;
-            ns.entities.spawnExplosion(
-              this.particles,
-              b.x + b.w / 2, b.y,
-              this.boss.cfg.behaviorKey === 'cage'  ? ['#FFD45A', '#C8102E', '#FFFFFF'] :
-              this.boss.cfg.behaviorKey === 'byd'   ? ['#D8D8D8', '#FF1418', '#FFFFFF'] :
-                                                     ['#3050FF', '#FF2030', '#FFFFFF']
-            );
-            ns.audio.playExplode();
-            if (!this.boss.alive) {
-              ns.entities.spawnBigExplosion(
-                this.particles,
-                this.boss.x + this.boss.w / 2,
-                this.boss.y + this.boss.h / 2,
-                ['#FFD400', '#FF3030', '#FFFFFF', '#FFA040']
-              );
-              this.score += 200;
-              this.flash = 0.25;
+          if (!hit) {
+            for (const boss of this.bosses) {
+              if (!boss.alive) continue;
+              if (!ns.entities.aabb(b, boss)) continue;
+              b.alive = false;
+              boss.hit(b.x + b.w / 2, b.y);
+              this.score += 50;
+              ns.entities.spawnExplosion(this.particles, b.x + b.w / 2, b.y, this.bossPalette(boss));
+              ns.audio.playExplode();
+              if (!boss.alive) this.onBossDefeated(boss);
+              break;
             }
           }
         } else if (ns.entities.aabb(b, this.player)) {
@@ -320,10 +370,11 @@
       }
 
       // Beam vs player (BYD boss). Only one hit per firing window.
-      if (this.boss && this.boss.alive) {
-        const beamRect = this.boss.beamRect(this.h);
-        if (beamRect && !this.boss.beam.damaged && ns.entities.aabb(beamRect, this.player)) {
-          this.boss.beam.damaged = true;
+      for (const boss of this.bosses) {
+        if (!boss.alive) continue;
+        const beamRect = boss.beamRect(this.h);
+        if (beamRect && !boss.beam.damaged && ns.entities.aabb(beamRect, this.player)) {
+          boss.beam.damaged = true;
           this.lives -= 1;
           this.flash = 0.45;
           ns.audio.playHit();
@@ -345,38 +396,38 @@
       // Lose if enemies cross player line
       if (this.grid.bottomY() >= this.player.y) this.endGame(STATES.OVER);
 
-      // Stage progression: clear wave -> spawn boss -> kill boss -> next stage
+      // Stage progression: clear wave -> spawn boss -> kill all bosses -> next stage
       if (this.grid.aliveCount() === 0 && this.state === STATES.PLAY) {
-        if (!this.boss) {
+        if (this.bosses.length === 0) {
           const bossCfg = stage.boss;
           if (bossCfg) {
-            this.boss = new ns.entities.Boss({
+            this.bosses.push(new ns.entities.Boss({
               ...bossCfg,
               bitmap: this.sprites.boss,
               bulletSprite: this.sprites.enemyBullet,
               bigBulletSprite: this.sprites.bigEnemyBullet,
               redBulletSprite: this.sprites.redBullet,
               blueBulletSprite: this.sprites.blueBullet
-            }, this.w);
-          } else if (this.stageIdx < ns.stages.length - 1) {
-            this.finishStage();
-            this.startStage(this.stageIdx + 1);
+            }, this.w));
           } else {
-            this.finishStage();
-            this.endGame(STATES.WIN);
+            this.advanceStage();
           }
-        } else if (!this.boss.alive) {
-          if (this.stageIdx < ns.stages.length - 1) {
-            this.finishStage();
-            this.startStage(this.stageIdx + 1);
-          } else {
-            this.finishStage();
-            this.endGame(STATES.WIN);
-          }
+        } else if (this.bosses.every(b => !b.alive)) {
+          // The viatura spawns its officers the same frame it dies, so this is
+          // only true once every boss (officers included) is down.
+          this.advanceStage();
         }
       }
 
       if (this.flash > 0) this.flash -= dt;
+      if (this.reinforcements > 0) this.reinforcements -= dt;
+    }
+
+    // Award the stage bonus and move on (next stage or final win).
+    advanceStage() {
+      this.finishStage();
+      if (this.stageIdx < ns.stages.length - 1) this.startStage(this.stageIdx + 1);
+      else this.endGame(STATES.WIN);
     }
 
     draw(t) {
@@ -407,13 +458,18 @@
       if (this.state === STATES.PLAY || this.state === STATES.INTRO) {
         this.player.draw(ctx);
         this.grid.draw(ctx);
-        if (this.boss && this.boss.alive) {
-          this.boss.draw(ctx);
-          this.boss.drawBeam(ctx, this.h);
+        for (const boss of this.bosses) {
+          if (!boss.alive) continue;
+          boss.draw(ctx);
+          boss.drawBeam(ctx, this.h);
         }
         for (const b of this.bullets) b.draw(ctx);
         for (const p of this.particles) p.draw(ctx);
         this.drawHUD();
+        if (this.reinforcements > 0) {
+          this.text('REFORÇOS!', this.w / 2, this.h * 0.42, 46, '#FF3030');
+          this.text('a viatura chamou apoio!', this.w / 2, this.h * 0.42 + 38, 16, '#FFD45A');
+        }
         if (this.state === STATES.INTRO) this.drawIntro(stage);
         if (this.flash > 0) {
           ctx.fillStyle = `rgba(255,80,80,${Math.min(1, this.flash * 1.6) * 0.55})`;
