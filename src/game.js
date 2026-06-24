@@ -41,6 +41,10 @@
       this.stageTimes = [];    // recorded clear time per completed stage
       this.scores = [];        // snapshot of the table on the end screen
       this.awaitingName = false;
+      this.boardLoading = false;
+      this.boardOffline = false;
+      this.submitting = false;
+      this.myEntryKey = null;  // highlights the player's own row
       this.nameEl = document.getElementById('nameEntry');
       this.nameInput = document.getElementById('nameInput');
       const saveBtn = document.getElementById('nameSave');
@@ -100,17 +104,21 @@
       this.stageTimes.push(Math.round(this.stageTime * 10) / 10);
     }
 
-    // Transition into an end screen (OVER/WIN), capturing the score table and
-    // prompting for a name when the run makes the top of the board.
+    // Transition into an end screen. Only finishers (WIN) are recorded — they
+    // get the name prompt; OVER just shows the global ranking read-only.
     endGame(state) {
       this.state = state;
-      this.scores = ns.scoreboard.load();
-      if (ns.scoreboard.qualifies(this.score)) {
-        this.awaitingName = true;
-        this.showNameEntry();
-      } else {
-        this.awaitingName = false;
-      }
+      this.scores = [];
+      this.boardLoading = true;
+      this.boardOffline = false;
+      this.submitting = false;
+      this.myEntryKey = null;
+      this.awaitingName = (state === STATES.WIN);
+      if (this.awaitingName) this.showNameEntry();
+      ns.scoreboard.fetchTop().then(list => {
+        this.scores = list;
+        this.boardLoading = false;
+      });
     }
 
     showNameEntry() {
@@ -124,16 +132,27 @@
     }
 
     submitName() {
-      if (!this.awaitingName) return;
+      if (!this.awaitingName || this.submitting) return;
       const name = ((this.nameInput && this.nameInput.value) || '').trim().slice(0, 16) || 'ANON';
-      this.scores = ns.scoreboard.save({
+      const total = Math.round(this.stageTimes.reduce((a, b) => a + b, 0) * 10) / 10;
+      const entry = {
         name,
         score: this.score,
-        date: new Date().toISOString().slice(0, 10),
-        stageTimes: this.stageTimes.slice()
-      });
+        total_time: total,
+        ship: this.shipId,
+        stage_times: this.stageTimes.slice()
+      };
+      this.myEntryKey = name + '|' + this.score + '|' + this.shipId;
+      this.submitting = true;
+      this.boardLoading = true;
       this.awaitingName = false;
       this.hideNameEntry();
+      ns.scoreboard.submit(entry).then(res => {
+        this.scores = res.list;
+        this.boardOffline = !!res.offline;
+        this.boardLoading = false;
+        this.submitting = false;
+      });
     }
 
     update(dt) {
@@ -424,27 +443,48 @@
       this.text(`YOUR SCORE  ${String(this.score).padStart(6, '0')}`, cx, 128, 22, '#fff');
 
       if (this.awaitingName) {
-        this.text('NEW HIGH SCORE!', cx, 200, 28, '#FFD400');
-        this.text('digite seu nome abaixo e tecle Enter', cx, 240, 14, '#aaa');
+        this.text('VOCÊ CHEGOU AO FIM!', cx, 200, 28, '#FFD400');
+        this.text('registre seu nome no ranking — digite e tecle Enter', cx, 240, 13, '#aaa');
         return; // the DOM input overlay is shown over the canvas center
       }
 
-      this.text('HIGH SCORES', cx, 180, 20, '#FFD400');
-      const list = this.scores || [];
-      if (!list.length) {
-        this.text('(sem pontuações ainda)', cx, 220, 15, '#888');
+      this.text('RANKING GLOBAL', cx, 152, 18, '#FFD400');
+
+      if (this.boardLoading) {
+        this.text('carregando…', cx, 210, 16, '#aaa');
       } else {
-        let y = 212;
-        for (let i = 0; i < list.length; i++) {
-          const e = list[i];
-          const mine = e.score === this.score;
-          const rowColor = mine ? '#FFD400' : '#ddd';
-          this.text(`${String(i + 1).padStart(2, ' ')}. ${e.name}`, cx - 170, y, 16, rowColor, 'left');
-          this.text(String(e.score).padStart(6, '0'), cx + 170, y, 16, rowColor, 'right');
-          y += 26;
+        const list = this.scores || [];
+        if (!list.length) {
+          this.text('(sem pontuações ainda)', cx, 210, 15, '#888');
+        } else {
+          const top = 182;
+          this.text('#',     cx - 250, top, 12, '#777', 'left');
+          this.text('NOME',  cx - 215, top, 12, '#777', 'left');
+          this.text('NAVE',  cx + 35,  top, 12, '#777', 'left');
+          this.text('TEMPO', cx + 130, top, 12, '#777', 'left');
+          this.text('SCORE', cx + 250, top, 12, '#777', 'right');
+          let y = top + 24;
+          for (let i = 0; i < list.length && y < this.h - 70; i++) {
+            const e = list[i];
+            const key = e.name + '|' + e.score + '|' + e.ship;
+            const rowColor = (this.myEntryKey && key === this.myEntryKey) ? '#FFD400' : '#ddd';
+            this.text(String(i + 1).padStart(2, ' '), cx - 250, y, 15, rowColor, 'left');
+            this.text(e.name, cx - 215, y, 15, rowColor, 'left');
+            this.text(e.ship || '-', cx + 35, y, 15, rowColor, 'left');
+            this.text(this.fmtTime(e.total_time), cx + 130, y, 15, rowColor, 'left');
+            this.text(String(e.score).padStart(6, '0'), cx + 250, y, 15, rowColor, 'right');
+            y += 24;
+          }
         }
       }
-      this.text('Press any key for menu', cx, this.h - 44, 16, '#aaa');
+
+      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 62, 12, '#d99');
+      this.text('Press any key for menu', cx, this.h - 38, 16, '#aaa');
+    }
+
+    fmtTime(s) {
+      s = Math.max(0, Math.round(s || 0));
+      return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
     }
 
     drawMenu() {
