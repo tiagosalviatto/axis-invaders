@@ -29,7 +29,8 @@
     active.y = e.clientY;
     if (!playing()) return;
     // Screen px -> logical canvas px (the canvas is CSS-scaled).
-    const k = (canvas.width / canvas.getBoundingClientRect().width) * SENSITIVITY;
+    const logicalW = ns.view ? ns.view.w : canvas.width;
+    const k = (logicalW / canvas.getBoundingClientRect().width) * SENSITIVITY;
     ns.input.addDrag(dx * k, dy * k);
   }
 

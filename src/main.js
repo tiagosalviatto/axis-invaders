@@ -11,8 +11,17 @@
   const touchLayout = coarse || forcePortrait;
   const portrait = forcePortrait || (coarse && window.innerHeight > window.innerWidth);
   if (touchLayout) document.documentElement.classList.add('touch');
-  if (portrait) { canvas.width = 600; canvas.height = 900; }
   if (coarse) ns.input.setMode('touch'); // show touch wording from the first screen
+
+  // Logical play area (game coordinates) + backing resolution. On phones the
+  // canvas gets real device pixels (capped at 2x for performance) so text and
+  // sprites are sharp; desktop stays at 1x so its sizing is unchanged.
+  const W = portrait ? 600 : 800;
+  const H = portrait ? 900 : 600;
+  const dpr = touchLayout ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ns.view = { w: W, h: H, dpr };
 
   ns.ui.attach(canvas);
   ns.touch.attach(canvas, document.getElementById('touchpad'));

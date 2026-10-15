@@ -9,6 +9,14 @@
   const STORY_CPS = 38;            // typewriter speed (characters per second)
   const STORY_AUTO_ADVANCE = 6;    // seconds after the text completes before auto-advancing
 
+  // Phone layout: the canvas is shown much smaller than on desktop, so small
+  // text and buttons are enlarged to stay readable/tappable. Desktop is 1x.
+  const PHONE_TEXT = 1.35;  // multiplier for small text (< 22px)
+  const PHONE_UI = 1.3;     // multiplier for button size and button spacing
+
+  const FONT = '"Courier New", Consolas, monospace';
+  const font = (size) => `bold ${size}px ${FONT}`;
+
   // The player's name is remembered on the device and pre-filled next time.
   const NAME_KEY = 'axis-invaders-name';
   function loadName() { try { return localStorage.getItem(NAME_KEY) || ''; } catch (e) { return ''; } }
@@ -24,9 +32,15 @@
     constructor(canvas) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
+      // Logical size (game coordinates). On phones the canvas is backed by more
+      // device pixels (ns.view.dpr) for sharpness; drawing still uses logical units.
+      const view = ns.view || { w: canvas.width, h: canvas.height, dpr: 1 };
+      this.w = view.w;
+      this.h = view.h;
+      this.ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       this.ctx.imageSmoothingEnabled = false;
-      this.w = canvas.width;
-      this.h = canvas.height;
+      this.phone = document.documentElement.classList.contains('touch');
+      this.S = this.phone ? PHONE_UI : 1;
 
       this.state = STATES.MENU;
       this.stageIdx = 0;
@@ -204,6 +218,7 @@
       this.state = state;
       this.hideNameEntry();
       this.myEntryKey = null;
+      if (state === STATES.OVER) this.buzz(220);
       if (state === STATES.WIN) {
         const total = Math.round(this.stageTimes.reduce((a, b) => a + b, 0) * 10) / 10;
         this.saveScore({
@@ -498,6 +513,7 @@
           this.lives -= 1;
           this.flash = 0.35;
           ns.audio.playHit();
+          this.buzz(60);
           ns.entities.spawnExplosion(
             this.particles,
             this.player.x + this.player.w / 2,
@@ -517,6 +533,7 @@
           this.lives -= 1;
           this.flash = 0.45;
           ns.audio.playHit();
+          this.buzz(90);
           ns.entities.spawnExplosion(
             this.particles,
             this.player.x + this.player.w / 2,
@@ -638,8 +655,8 @@
       this.text('GAME OVER', cx, this.h / 2 - 90, 58, '#FF3030');
       this.text('bata o ponto e tente novamente amanhã', cx, this.h / 2 - 28, 19, '#fff');
       this.text(`SCORE  ${String(this.score).padStart(6, '0')}`, cx, this.h / 2 + 12, 18, '#aaa');
-      this.button('VOLTAR AO INÍCIO' + this.kb('SPACE'), cx, this.h / 2 + 80, 320, 48, 'confirm', { primary: true, size: 20 });
-      this.button('RANKING' + this.kb('R'), cx, this.h / 2 + 138, 320, 40, 'ranking');
+      this.button('VOLTAR AO INÍCIO' + this.kb('SPACE'), cx, this.h / 2 + 80 * this.S, 320, 48, 'confirm', { primary: true, size: 20 });
+      this.button('RANKING' + this.kb('R'), cx, this.h / 2 + 138 * this.S, 320, 40, 'ranking');
     }
 
     // Win: the overall score is saved under the player's name; show the overall board.
@@ -649,6 +666,14 @@
       this.text('YOU WIN!', cx, 70 + oy, 50, '#FFD400');
       this.text(`${this.playerName}  ·  SCORE ${String(this.score).padStart(6, '0')}`, cx, 112 + oy, 20, '#fff');
       this.text('RANKING GERAL', cx, 152 + oy, 18, '#FFD400');
+      if (this.phone) {
+        // Bigger buttons don't fit side by side on the narrow canvas: stack them.
+        this.drawScoreTable(182 + oy, this.h - 170);
+        if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 152, 12, '#d99');
+        this.button('MENU', cx, this.h - 106, 300, 44, 'confirm', { primary: true });
+        this.button('RANKING', cx, this.h - 40, 300, 40, 'ranking');
+        return;
+      }
       this.drawScoreTable(182 + oy);
       if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
       this.button('MENU' + this.kb('SPACE'), cx - 130, this.h - 40, 230, 40, 'confirm', { primary: true });
@@ -665,11 +690,12 @@
       // Tab strip (centered); the active tab is highlighted. Tabs shrink to fit
       // the width when more stages are added.
       const gap = 10;
-      const tabW = Math.min(128, Math.floor((this.w - 40 - gap * (tabs.length - 1)) / tabs.length));
+      const tabW = Math.min(this.phone ? 140 : 128, Math.floor((this.w - 40 - gap * (tabs.length - 1)) / tabs.length));
       const totalW = tabs.length * tabW + (tabs.length - 1) * gap;
       let tx = cx - totalW / 2 + tabW / 2;
       tabs.forEach((t, i) => {
-        this.button(t.label, tx, 94 + oy, tabW, 34, 'tab', { primary: i === this.rankingTab, size: 15, payload: i });
+        this.button(t.label, tx, 94 + oy, tabW, 34, 'tab',
+          { primary: i === this.rankingTab, size: 15, payload: i, fixedW: true });
         tx += tabW + gap;
       });
 
@@ -677,7 +703,7 @@
       const sub = cur.stageId ? cur.stage.name : 'quem bateu o ponto até o fim';
       this.text(sub + (this.touchMode ? '' : '   (← → troca a aba)'), cx, 130 + oy, 13, '#888');
 
-      this.drawScoreTable(160 + oy);
+      this.drawScoreTable(160 + oy, this.phone ? this.h - 80 : undefined);
       this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 260, 40, 'back', { primary: true });
     }
 
@@ -698,7 +724,7 @@
       this.text(`${this.playerName}  ·  PONTOS ${String(this.clearStageScore).padStart(6, '0')}  ·  TEMPO ${this.fmtTime(this.clearStageTime)}`,
         cx, 124 + oy, 15, '#ddd');
       this.text('RANKING DA FASE', cx, 158 + oy, 16, '#FFD400');
-      this.drawScoreTable(186 + oy);
+      this.drawScoreTable(186 + oy, this.phone ? this.h - 110 : undefined);
       if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
       const last = this.stageIdx >= ns.stages.length - 1;
       this.button((last ? 'FINALIZAR' : 'CONTINUAR') + this.kb('SPACE'), cx, this.h - 40, 280, 44, 'confirm',
@@ -707,30 +733,52 @@
 
     // Shared high-scores table; `top` is the header baseline. Handles the
     // loading and empty states too.
-    drawScoreTable(top) {
+    // `bottom`: rows stop before this y (defaults to h - 70).
+    drawScoreTable(top, bottom) {
       const cx = this.w / 2;
+      bottom = bottom || this.h - 70;
       if (this.boardLoading) { this.text('carregando…', cx, top + 30, 16, '#aaa'); return; }
       const list = this.scores || [];
       if (!list.length) { this.text('(sem pontuações ainda)', cx, top + 30, 15, '#888'); return; }
       const DEVICE = { web: 'WEB', mobile: 'MOB' };
-      this.text('#',     cx - 262, top, 12, '#777', 'left');
-      this.text('NOME',  cx - 228, top, 12, '#777', 'left');
-      this.text('NAVE',  cx + 20,  top, 12, '#777', 'left');
-      this.text('DISP',  cx + 92,  top, 12, '#777', 'left');
-      this.text('TEMPO', cx + 160, top, 12, '#777', 'left');
-      this.text('SCORE', cx + 262, top, 12, '#777', 'right');
-      let y = top + 24;
-      for (let i = 0; i < list.length && y < this.h - 70; i++) {
+
+      // Column x positions: # NOME NAVE DISP TEMPO SCORE (SCORE right-aligned).
+      // Desktop keeps its fixed layout; phones derive a compact one from the
+      // (enlarged) character width so the bigger text still fits.
+      let X;
+      if (this.phone) {
+        this.ctx.font = font(this.ts(15));
+        const cw = this.ctx.measureText('0').width;
+        const chars = [2, 16, 4, 3, 5, 6];
+        const left = 14, right = this.w - 14;
+        const gap = (right - left - chars.reduce((a, b) => a + b, 0) * cw) / (chars.length - 1);
+        X = [];
+        let x = left;
+        for (const c of chars) { X.push(x); x += c * cw + gap; }
+        X[5] = right;
+      } else {
+        X = [cx - 262, cx - 228, cx + 20, cx + 92, cx + 160, cx + 262];
+      }
+      const rowH = this.phone ? 30 : 24;
+
+      this.text('#',     X[0], top, 12, '#777', 'left');
+      this.text('NOME',  X[1], top, 12, '#777', 'left');
+      this.text('NAVE',  X[2], top, 12, '#777', 'left');
+      this.text('DISP',  X[3], top, 12, '#777', 'left');
+      this.text('TEMPO', X[4], top, 12, '#777', 'left');
+      this.text('SCORE', X[5], top, 12, '#777', 'right');
+      let y = top + rowH;
+      for (let i = 0; i < list.length && y < bottom; i++) {
         const e = list[i];
         const key = e.name + '|' + e.score + '|' + e.ship;
         const rowColor = (this.myEntryKey && key === this.myEntryKey) ? '#FFD400' : '#ddd';
-        this.text(String(i + 1).padStart(2, ' '), cx - 262, y, 15, rowColor, 'left');
-        this.text(e.name, cx - 228, y, 15, rowColor, 'left');
-        this.text(e.ship || '-', cx + 20, y, 15, rowColor, 'left');
-        this.text(DEVICE[e.device] || '—', cx + 92, y, 15, rowColor, 'left');
-        this.text(this.fmtTime(e.total_time), cx + 160, y, 15, rowColor, 'left');
-        this.text(String(e.score).padStart(6, '0'), cx + 262, y, 15, rowColor, 'right');
-        y += 24;
+        this.text(String(i + 1).padStart(2, ' '), X[0], y, 15, rowColor, 'left');
+        this.text(e.name, X[1], y, 15, rowColor, 'left');
+        this.text(e.ship || '-', X[2], y, 15, rowColor, 'left');
+        this.text(DEVICE[e.device] || '—', X[3], y, 15, rowColor, 'left');
+        this.text(this.fmtTime(e.total_time), X[4], y, 15, rowColor, 'left');
+        this.text(String(e.score).padStart(6, '0'), X[5], y, 15, rowColor, 'right');
+        y += rowH;
       }
     }
 
@@ -744,8 +792,8 @@
       this.text('AXIS INVADERS', this.w / 2, this.h / 2 - 90, 60, '#fff');
       this.text('Beware of the dangers lurking about', this.w / 2, this.h / 2 - 40, 16, '#888');
       this.text('Nicholas Cage  -  BYD no trânsito  -  Samba Agregado', this.w / 2, this.h / 2 + 0, 16, '#aaa');
-      this.button('JOGAR' + this.kb('SPACE'), this.w / 2, this.h / 2 + 70, 260, 48, 'confirm', { primary: true, size: 22 });
-      this.button('RANKING' + this.kb('R'), this.w / 2, this.h / 2 + 128, 260, 40, 'ranking');
+      this.button('JOGAR' + this.kb('SPACE'), this.w / 2, this.h / 2 + 70 * this.S, 260, 48, 'confirm', { primary: true, size: 22 });
+      this.button('RANKING' + this.kb('R'), this.w / 2, this.h / 2 + 128 * this.S, 260, 40, 'ranking');
       if (!this.touchMode) {
         this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.h - 40, 13, '#666');
       }
@@ -791,7 +839,7 @@
         ctx.drawImage(spr, cx - spr.width / 2, cardY + 40 - spr.height / 2);
 
         this.text(def.name, cx, cardY + 110, 30, selected ? '#FFD400' : '#fff');
-        this.text(def.desc, cx, cardY + 140, 13, '#aaa');
+        this.text(def.desc, cx, cardY + 140, this.fitSize(def.desc, this.ts(13), cardW - 12), '#aaa', 'center', true);
 
         // Stat bars.
         this.drawStatBar('SPEED', cardX + 20, cardY + 175, cardW - 40, bars[id].speed);
@@ -842,7 +890,7 @@
       // Level badge + stage name + accent divider.
       const oy = this.oy;
       this.text(`NÍVEL ${this.stageIdx + 1}`, cx, 300 + oy, 18, accent);
-      this.text(stage.name, cx, 332 + oy, this.fitSize(stage.name, 34, this.w - 40), '#fff');
+      this.text(stage.name, cx, 332 + oy, this.fitSize(stage.name, 34, this.w - 40), '#fff', 'center', true);
       ctx.fillStyle = accent;
       ctx.fillRect(cx - 120, 350 + oy, 240, 2);
 
@@ -850,14 +898,14 @@
       const text = stage.story || '';
       const shown = Math.min(text.length, Math.floor(t * STORY_CPS));
       const full = shown >= text.length;
-      const lines = this.wrapLines(text.slice(0, shown), this.w - 160, 19);
+      const lines = this.wrapLines(text.slice(0, shown), this.w - (this.phone ? 50 : 160), 19);
       const cursor = (!full && (Math.floor(performance.now() / 250) % 2 === 0)) ? '▌' : '';
       if (cursor) {
         if (lines.length) lines[lines.length - 1] += cursor;
         else lines.push(cursor);
       }
       let ty = 386 + oy;
-      for (const ln of lines) { this.text(ln, cx, ty, 19, '#eaeaea'); ty += 28; }
+      for (const ln of lines) { this.text(ln, cx, ty, 19, '#eaeaea'); ty += this.phone ? 36 : 28; }
 
       // Player ship sliding up from the bottom.
       if (this.sprites && this.sprites.player) {
@@ -877,10 +925,11 @@
       }
     }
 
-    // Greedy word-wrap measured against the current monospace font.
+    // Greedy word-wrap. `size` is the nominal size passed to text() (phone
+    // enlargement is applied here too, so measuring matches drawing).
     wrapLines(str, maxWidth, size) {
       const ctx = this.ctx;
-      ctx.font = `bold ${size}px "Courier New", Consolas, monospace`;
+      ctx.font = font(this.ts(size));
       const lines = [];
       let cur = '';
       for (const word of str.split(' ')) {
@@ -896,26 +945,28 @@
       const ctx = this.ctx;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, this.h / 2 - 70, this.w, 140);
-      this.text(stage.name, this.w / 2, this.h / 2 - 18, this.fitSize(stage.name, 48, this.w - 40), '#fff');
+      this.text(stage.name, this.w / 2, this.h / 2 - 18, this.fitSize(stage.name, 48, this.w - 40), '#fff', 'center', true);
       this.text(stage.subtitle, this.w / 2, this.h / 2 + 26, 15, '#bbb');
     }
 
     drawHUD() {
       const ctx = this.ctx;
+      const barH = this.phone ? 40 : 32;
+      const ty = barH / 2;
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      ctx.fillRect(0, 0, this.w, 32);
-      this.text(`SCORE ${String(this.score).padStart(5, '0')}`, 16, 16, 16, '#fff', 'left');
-      this.text(`STAGE ${this.stageIdx + 1}/${ns.stages.length}`, this.w / 2, 16, 16, '#fff');
+      ctx.fillRect(0, 0, this.w, barH);
+      this.text(`SCORE ${String(this.score).padStart(5, '0')}`, 16, ty, 16, '#fff', 'left');
+      this.text(`STAGE ${this.stageIdx + 1}/${ns.stages.length}`, this.w / 2, ty, 16, '#fff');
       const lives = '♥'.repeat(Math.max(0, this.lives)) +
                     '·'.repeat(Math.max(0, 3 - this.lives));
       if (!this.touchMode) {
-        this.text(`LIVES ${lives}`, this.w - 16, 16, 16, '#fff', 'right');
+        this.text(`LIVES ${lives}`, this.w - 16, ty, 16, '#fff', 'right');
         return;
       }
       // Touch: pause button in the corner (no P key on a phone). Its tap area is
       // larger than the drawn button so it's easy to hit with a thumb.
-      this.text(lives, this.w - 72, 16, 16, '#fff', 'right');
-      const bx = this.w - 40, by = 16;
+      this.text(lives, this.w - 72, ty, 16, '#fff', 'right');
+      const bx = this.w - 40, by = ty;
       ctx.fillStyle = 'rgba(255,255,255,0.10)';
       ctx.fillRect(bx - 22, by - 13, 44, 26);
       ctx.strokeStyle = 'rgba(255,255,255,0.45)';
@@ -924,13 +975,18 @@
       ctx.fillStyle = '#fff';
       ctx.fillRect(bx - 7, by - 7, 4, 14);
       ctx.fillRect(bx + 3, by - 7, 4, 14);
-      if (this.state === STATES.PLAY) ns.ui.add({ x: this.w - 80, y: 0, w: 80, h: 56 }, 'pause');
+      if (this.state === STATES.PLAY) ns.ui.add({ x: this.w - 80, y: 0, w: 80, h: 60 }, 'pause');
     }
 
     // Canvas button: draws it and registers its rect for mouse/touch hit-testing.
+    // On phones it is enlarged (PHONE_UI) unless `fixedW` (e.g. ranking tabs).
     button(label, cx, cy, w, h, action, opts) {
       opts = opts || {};
       const ctx = this.ctx;
+      if (this.phone) {
+        if (!opts.fixedW) w = Math.min(this.w - 40, Math.round(w * this.S));
+        h = Math.round(h * this.S);
+      }
       const x = Math.round(cx - w / 2);
       const y = Math.round(cy - h / 2);
       const primary = !!opts.primary;
@@ -954,21 +1010,40 @@
     // (portrait) canvas. 0 on desktop, so desktop layouts are unchanged.
     get oy() { return Math.max(0, (this.h - 600) / 2); }
 
-    // Largest font size <= `size` at which `str` fits in `maxW` (long stage names
-    // on the narrower portrait canvas).
+    // Effective font size for a nominal size: small text grows on phones.
+    ts(size) { return this.phone && size < 22 ? Math.round(size * PHONE_TEXT) : size; }
+
+    // Largest font size <= `size` at which `str` fits in `maxW`. Returns an
+    // *effective* size — draw it with text(..., exact = true).
     fitSize(str, size, maxW) {
-      this.ctx.font = `bold ${size}px "Courier New", Consolas, monospace`;
+      this.ctx.font = font(size);
       const w = this.ctx.measureText(str).width;
       return w > maxW ? Math.floor(size * maxW / w) : size;
     }
 
-    text(str, x, y, size, color, align) {
+    // Draw text. `size` is nominal (enlarged on phones) unless `exact`.
+    // Centered text never runs off the canvas: it shrinks to fit the width.
+    text(str, x, y, size, color, align, exact) {
       const ctx = this.ctx;
+      align = align || 'center';
+      let s = exact ? size : this.ts(size);
+      ctx.font = font(s);
+      if (align === 'center') {
+        const maxW = this.w - 24;
+        const w = ctx.measureText(str).width;
+        if (w > maxW) { s = Math.floor(s * maxW / w); ctx.font = font(s); }
+      }
       ctx.fillStyle = color;
-      ctx.font = `bold ${size}px "Courier New", Consolas, monospace`;
-      ctx.textAlign = align || 'center';
+      ctx.textAlign = align;
       ctx.textBaseline = 'middle';
       ctx.fillText(str, x, y);
+    }
+
+    // Short vibration on phones that support it (Android; iOS browsers don't).
+    buzz(pattern) {
+      if (this.phone && navigator.vibrate) {
+        try { navigator.vibrate(pattern); } catch (e) { /* ignore */ }
+      }
     }
   }
 

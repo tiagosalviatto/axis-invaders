@@ -13,12 +13,18 @@
     buttons.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h, action, payload });
   }
 
+  // Logical (game) size of the canvas — its pixel size may be larger on phones.
+  function logicalSize() {
+    return ns.view ? { w: ns.view.w, h: ns.view.h } : { w: canvas.width, h: canvas.height };
+  }
+
   // Pointer position in logical canvas coordinates (the canvas is CSS-scaled).
   function toCanvas(e) {
     const r = canvas.getBoundingClientRect();
+    const L = logicalSize();
     return {
-      x: (e.clientX - r.left) * canvas.width / r.width,
-      y: (e.clientY - r.top) * canvas.height / r.height
+      x: (e.clientX - r.left) * L.w / r.width,
+      y: (e.clientY - r.top) * L.h / r.height
     };
   }
 
