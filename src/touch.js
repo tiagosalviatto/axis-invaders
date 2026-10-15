@@ -22,10 +22,15 @@
     return e.pointerType !== 'mouse' || document.documentElement.classList.contains('touch');
   }
 
-  function start(e) {
+  function start(e, el) {
     active = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+    try { el.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
     ns.input.setHeld('fire', true);
+  }
+
+  function isFormControl(el) {
+    const tag = el && el.tagName;
+    return tag === 'INPUT' || tag === 'BUTTON' || tag === 'TEXTAREA';
   }
 
   function move(e) {
@@ -49,16 +54,31 @@
 
   function attach(cv) {
     canvas = cv;
-    // During play, a press anywhere on the game (except on a button) starts steering.
-    cv.addEventListener('pointerdown', (e) => {
-      if (active || !playing() || !canSteer(e)) return;
-      if (ns.ui.buttonAt(e)) return;
-      start(e);
+    // Phone layout: the whole page is the steering surface, so any border left
+    // around the game still works. Desktop: only the canvas (touch/pen).
+    const phone = document.documentElement.classList.contains('touch');
+    const surface = phone ? document.body : cv;
+
+    surface.addEventListener('pointerdown', (e) => {
+      if (isFormControl(e.target)) return; // name form: let it work normally
+      if (!playing()) {
+        // Outside the canvas, a tap still counts as tapping the screen (e.g.
+        // to advance a cutscene). Taps on the canvas are handled by ui.js.
+        if (phone && e.target !== cv) {
+          if (e.pointerType !== 'mouse') ns.input.setMode('touch');
+          if (ns.audio) ns.audio.enable();
+          ns.input.trigger('tap');
+        }
+        return;
+      }
+      if (active || !canSteer(e)) return;
+      if (e.target === cv && ns.ui.buttonAt(e)) return; // pause button etc.
+      start(e, surface);
     });
-    cv.addEventListener('pointermove', move);
-    cv.addEventListener('pointerup', end);
-    cv.addEventListener('pointercancel', end);
-    cv.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    surface.addEventListener('pointermove', move);
+    surface.addEventListener('pointerup', end);
+    surface.addEventListener('pointercancel', end);
+    surface.addEventListener('contextmenu', (ev) => ev.preventDefault());
     window.addEventListener('blur', () => end());
   }
 
