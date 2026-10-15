@@ -6,7 +6,7 @@
   // the drag target at its own top speed (see Player.update), so each ship keeps
   // its speed identity. On phones the ship rests above a thumb area at the
   // bottom of the screen, so the finger doesn't cover it.
-  const SENSITIVITY = 2.1; // ship travel per finger travel, in screen space
+  const SENSITIVITY = 1.9; // ship travel per finger travel, in screen space
 
   let canvas = null;
   let active = null; // the steering pointer: { id, x, y }
