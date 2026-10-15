@@ -232,32 +232,41 @@
       const stage = ns.stages[this.stageIdx];
 
       if (this.state === STATES.MENU) {
-        if (ns.input.consumePress('KeyR')) { this.openRanking(STATES.MENU); return; }
-        if (ns.input.consumeAnyPress()) {
+        if (ns.input.pressed('ranking')) { this.openRanking(STATES.MENU); return; }
+        if (ns.input.anyPressed()) {
           ns.audio.enable();
           this.selIdx = ns.ships.order.indexOf(this.shipId);
           if (this.selIdx < 0) this.selIdx = 0;
+          ns.input.clear();
           this.state = STATES.SELECT;
         }
         return;
       }
 
       if (this.state === STATES.RANKING) {
-        if (ns.input.consumeAnyPress()) this.state = this.rankingFrom || STATES.MENU;
+        if (ns.input.anyPressed()) {
+          ns.input.clear();
+          this.state = this.rankingFrom || STATES.MENU;
+        }
         return;
       }
 
       if (this.state === STATES.SELECT) {
         const n = ns.ships.order.length;
-        if (ns.input.consumePress('ArrowLeft') || ns.input.consumePress('KeyA')) {
+        const pick = ns.input.take('pick'); // tapped/clicked a ship card
+        if (pick !== null) {
+          if (pick === this.selIdx) ns.input.trigger('confirm'); // second tap launches
+          else { this.selIdx = pick; ns.audio.playShoot(); }
+        }
+        if (ns.input.pressed('left')) {
           this.selIdx = (this.selIdx - 1 + n) % n;
           ns.audio.playShoot();
         }
-        if (ns.input.consumePress('ArrowRight') || ns.input.consumePress('KeyD')) {
+        if (ns.input.pressed('right')) {
           this.selIdx = (this.selIdx + 1) % n;
           ns.audio.playShoot();
         }
-        if (ns.input.consumePress('Space') || ns.input.consumePress('Enter')) {
+        if (ns.input.pressed('confirm')) {
           this.shipId = ns.ships.order[this.selIdx];
           this.startGame();
         }
@@ -268,7 +277,7 @@
         this.storyT += dt;
         const text = stage.story || '';
         const full = this.storyT * STORY_CPS >= text.length;
-        if (ns.input.consumeAnyPress()) {
+        if (ns.input.anyPressed()) {
           if (!full) this.storyT = text.length / STORY_CPS + 0.01; // 1st key: reveal all text
           else this.beginIntro();                                  // 2nd key: start the stage
         }
@@ -281,14 +290,14 @@
 
       if (this.state === STATES.WIN) {
         if (this.awaitingName) return; // block until the name is submitted
-        if (ns.input.consumePress('KeyR')) { this.openRanking(STATES.WIN); return; }
-        if (ns.input.consumeAnyPress()) this.state = STATES.MENU;
+        if (ns.input.pressed('ranking')) { this.openRanking(STATES.WIN); return; }
+        if (ns.input.anyPressed()) { ns.input.clear(); this.state = STATES.MENU; }
         return;
       }
 
       if (this.state === STATES.OVER) {
-        if (ns.input.consumePress('KeyR')) { this.openRanking(STATES.OVER); return; }
-        if (ns.input.consumePress('Space')) this.state = STATES.MENU;
+        if (ns.input.pressed('ranking')) { this.openRanking(STATES.OVER); return; }
+        if (ns.input.pressed('confirm')) { ns.input.clear(); this.state = STATES.MENU; }
         return;
       }
 
@@ -299,14 +308,14 @@
       }
 
       // PLAY
-      if (ns.input.consumePress('KeyP')) this.paused = !this.paused;
+      if (ns.input.pressed('pause')) this.paused = !this.paused;
       if (this.paused) return;
 
       this.stageTime += dt;
 
       this.player.update(dt, ns.input);
 
-      if (ns.input.isDown('Space') && this.player.canFire()) {
+      if (ns.input.held('fire') && this.player.canFire()) {
         this.bullets.push(new ns.entities.Bullet(
           this.player.x + this.player.w / 2,
           this.player.y - 4,
@@ -460,6 +469,7 @@
     draw(t) {
       const ctx = this.ctx;
       const stage = ns.stages[this.stageIdx];
+      ns.ui.begin(); // buttons are re-registered by whatever this frame draws
 
       ctx.fillStyle = stage.bgColor;
       ctx.fillRect(0, 0, this.w, this.h);
@@ -505,8 +515,8 @@
         if (this.paused) {
           ctx.fillStyle = 'rgba(0,0,0,0.65)';
           ctx.fillRect(0, 0, this.w, this.h);
-          this.text('PAUSED', this.w / 2, this.h / 2, 56, '#fff');
-          this.text('press P to resume', this.w / 2, this.h / 2 + 50, 16, '#aaa');
+          this.text('PAUSED', this.w / 2, this.h / 2 - 20, 56, '#fff');
+          this.button('CONTINUAR' + this.kb('P'), this.w / 2, this.h / 2 + 50, 260, 46, 'pause', { primary: true });
         }
         return;
       }
@@ -522,9 +532,8 @@
       this.text('GAME OVER', cx, this.h / 2 - 90, 58, '#FF3030');
       this.text('bata o ponto e tente novamente amanhã', cx, this.h / 2 - 28, 19, '#fff');
       this.text(`SCORE  ${String(this.score).padStart(6, '0')}`, cx, this.h / 2 + 12, 18, '#aaa');
-      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
-      if (blink) this.text('SPACE: voltar ao início', cx, this.h / 2 + 78, 22, '#FFD400');
-      this.text('R: ver ranking global', cx, this.h / 2 + 116, 16, '#9cf');
+      this.button('VOLTAR AO INÍCIO' + this.kb('SPACE'), cx, this.h / 2 + 80, 320, 48, 'confirm', { primary: true, size: 20 });
+      this.button('RANKING' + this.kb('R'), cx, this.h / 2 + 138, 320, 40, 'ranking');
     }
 
     // Win: finisher registers a name, then sees the global ranking inline.
@@ -539,8 +548,9 @@
       }
       this.text('RANKING GLOBAL', cx, 152, 18, '#FFD400');
       this.drawScoreTable(182);
-      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 62, 12, '#d99');
-      this.text('SPACE: menu     R: ranking', cx, this.h - 38, 15, '#aaa');
+      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
+      this.button('MENU' + this.kb('SPACE'), cx - 130, this.h - 40, 230, 40, 'confirm', { primary: true });
+      this.button('RANKING' + this.kb('R'), cx + 130, this.h - 40, 230, 40, 'ranking');
     }
 
     // Standalone global high-scores screen (reachable from menu / game over).
@@ -549,8 +559,7 @@
       this.text('RANKING GLOBAL', cx, 66, 40, '#FFD400');
       this.text('os melhores que bateram o ponto', cx, 104, 14, '#888');
       this.drawScoreTable(146);
-      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
-      if (blink) this.text('aperte qualquer tecla para voltar', cx, this.h - 38, 16, '#aaa');
+      this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 260, 40, 'back', { primary: true });
     }
 
     // Shared high-scores table; `top` is the header baseline. Handles the
@@ -589,10 +598,11 @@
       this.text('AXIS INVADERS', this.w / 2, this.h / 2 - 90, 60, '#fff');
       this.text('Beware of the dangers lurking about', this.w / 2, this.h / 2 - 40, 16, '#888');
       this.text('Nicholas Cage  -  BYD no trânsito  -  Samba Agregado', this.w / 2, this.h / 2 + 0, 16, '#aaa');
-      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
-      if (blink) this.text('PRESS SPACE TO START', this.w / 2, this.h / 2 + 72, 26, '#FFD400');
-      this.text('R = ranking global', this.w / 2, this.h / 2 + 110, 15, '#9cf');
-      this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.h - 40, 13, '#666');
+      this.button('JOGAR' + this.kb('SPACE'), this.w / 2, this.h / 2 + 70, 260, 48, 'confirm', { primary: true, size: 22 });
+      this.button('RANKING' + this.kb('R'), this.w / 2, this.h / 2 + 128, 260, 40, 'ranking');
+      if (!this.touchMode) {
+        this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.h - 40, 13, '#666');
+      }
     }
 
     drawSelect() {
@@ -606,7 +616,8 @@
       const bars = ns.ships.statBars();
 
       this.text('SELECT YOUR SHIP', this.w / 2, 70, 40, '#fff');
-      this.text('← →  escolher    Space / Enter  confirmar', this.w / 2, 110, 15, '#888');
+      this.text(this.touchMode ? 'toque numa nave para escolher' : '← →  escolher    Space / Enter  confirmar',
+        this.w / 2, 110, 15, '#888');
 
       const n = ns.ships.order.length;
       const slotW = this.w / n;
@@ -626,6 +637,7 @@
         ctx.strokeStyle = selected ? '#FFD400' : 'rgba(255,255,255,0.15)';
         ctx.lineWidth = selected ? 3 : 1;
         ctx.strokeRect(cardX, cardY, cardW, cardH);
+        ns.ui.add({ x: cardX, y: cardY, w: cardW, h: cardH }, 'pick', i);
 
         // Ship sprite, centered near the top of the card.
         const spr = this.shipPreviews[id];
@@ -639,10 +651,7 @@
         this.drawStatBar('FIRE',  cardX + 20, cardY + 215, cardW - 40, bars[id].fireRate);
       }
 
-      const blink = (Math.floor(performance.now() / 500) % 2) === 0;
-      if (blink) {
-        this.text('PRESS SPACE TO LAUNCH', this.w / 2, this.h - 60, 22, '#FFD400');
-      }
+      this.button('LANÇAR' + this.kb('SPACE'), this.w / 2, this.h - 70, 280, 50, 'confirm', { primary: true, size: 22 });
     }
 
     drawStatBar(label, x, y, w, ratio) {
@@ -716,7 +725,7 @@
 
       // Prompt once the text is fully revealed.
       if (full && (Math.floor(performance.now() / 450) % 2 === 0)) {
-        this.text('press any key  ▸', cx, this.h - 24, 15, accent);
+        this.text(this.touchMode ? 'toque para continuar  ▸' : 'press any key  ▸', cx, this.h - 24, 15, accent);
       }
     }
 
@@ -753,6 +762,29 @@
                     '·'.repeat(Math.max(0, 3 - this.lives));
       this.text(`LIVES ${lives}`, this.w - 16, 16, 16, '#fff', 'right');
     }
+
+    // Canvas button: draws it and registers its rect for mouse/touch hit-testing.
+    button(label, cx, cy, w, h, action, opts) {
+      opts = opts || {};
+      const ctx = this.ctx;
+      const x = Math.round(cx - w / 2);
+      const y = Math.round(cy - h / 2);
+      const primary = !!opts.primary;
+      ctx.fillStyle = primary ? 'rgba(255,212,0,0.16)' : 'rgba(255,255,255,0.06)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = primary ? '#FFD400' : 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      this.text(label, cx, cy + 1, opts.size || 18, primary ? '#FFD400' : '#ddd');
+      ns.ui.add({ x, y, w, h }, action, opts.payload);
+    }
+
+    // Key hint suffix shown only when the player is using the keyboard.
+    kb(key) {
+      return ns.input.mode === 'keyboard' ? `  [${key}]` : '';
+    }
+
+    get touchMode() { return ns.input.mode === 'touch'; }
 
     text(str, x, y, size, color, align) {
       const ctx = this.ctx;

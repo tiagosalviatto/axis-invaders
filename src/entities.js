@@ -26,10 +26,10 @@
     }
     update(dt, input) {
       let dx = 0, dy = 0;
-      if (input.isDown('ArrowLeft')  || input.isDown('KeyA')) dx -= 1;
-      if (input.isDown('ArrowRight') || input.isDown('KeyD')) dx += 1;
-      if (input.isDown('ArrowUp')    || input.isDown('KeyW')) dy -= 1;
-      if (input.isDown('ArrowDown')  || input.isDown('KeyS')) dy += 1;
+      if (input.held('left'))  dx -= 1;
+      if (input.held('right')) dx += 1;
+      if (input.held('up'))    dy -= 1;
+      if (input.held('down'))  dy += 1;
       this.x += dx * this.speed * dt;
       this.y += dy * this.speed * 0.75 * dt;
       const margin = 8;

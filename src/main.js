@@ -2,6 +2,8 @@
   const ns = window.AxisInvaders;
   const canvas = document.getElementById('game');
 
+  ns.ui.attach(canvas);
+
   ns.sprites.preloadAssets().then(() => {
     const game = new ns.Game(canvas);
     ns.game = game; // exposed for debugging / preview inspection
