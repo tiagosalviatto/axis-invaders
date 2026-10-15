@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Axis Invaders</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <canvas id="game" width="800" height="600"></canvas>
+  <div id="touchpad"><span>arraste aqui para mover &middot; tiro automático</span></div>
   <div id="hint">&larr; &uarr; &darr; &rarr; / WASD : mover &nbsp;&middot;&nbsp; Space : atirar / confirmar &nbsp;&middot;&nbsp; R : ranking &nbsp;&middot;&nbsp; P : pausa</div>
 
   <div id="nameEntry" class="hidden">
@@ -20,6 +21,7 @@
   <script src="src/audio.js"></script>
   <script src="src/input.js"></script>
   <script src="src/ui.js"></script>
+  <script src="src/touch.js"></script>
   <script src="src/ships.js"></script>
   <script src="src/stages.js"></script>
   <script src="src/entities.js"></script>

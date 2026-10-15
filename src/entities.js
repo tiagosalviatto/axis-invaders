@@ -25,14 +25,31 @@
       this.yMax = canvasH - this.h - 8;
     }
     update(dt, input) {
+      const margin = 8;
+      const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
       let dx = 0, dy = 0;
       if (input.held('left'))  dx -= 1;
       if (input.held('right')) dx += 1;
       if (input.held('up'))    dy -= 1;
       if (input.held('down'))  dy += 1;
+
+      // Touch steering: a drag moves a target point; the ship chases it no
+      // faster than its own top speed (so fast/slow ships still feel different).
+      // Keyboard movement takes over and drops the target.
+      const drag = input.takeDrag();
+      if (dx || dy) {
+        this.tx = null;
+      } else if (drag.dx || drag.dy || this.tx != null) {
+        if (this.tx == null) { this.tx = this.x; this.ty = this.y; }
+        this.tx = clamp(this.tx + drag.dx, margin, this.canvasW - margin - this.w);
+        this.ty = clamp(this.ty + drag.dy, this.yMin, this.yMax);
+        const sx = this.speed * dt, sy = this.speed * 0.75 * dt;
+        this.x += clamp(this.tx - this.x, -sx, sx);
+        this.y += clamp(this.ty - this.y, -sy, sy);
+      }
+
       this.x += dx * this.speed * dt;
       this.y += dy * this.speed * 0.75 * dt;
-      const margin = 8;
       if (this.x < margin) this.x = margin;
       if (this.x + this.w > this.canvasW - margin) this.x = this.canvasW - margin - this.w;
       if (this.y < this.yMin) this.y = this.yMin;

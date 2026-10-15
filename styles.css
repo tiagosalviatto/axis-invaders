@@ -28,6 +28,72 @@ canvas {
   user-select: none;
 }
 
+/* ---- Phone / tablet layout (html.touch is set by main.js) ---------------- */
+#touchpad { display: none; }
+
+html.touch, html.touch body {
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;        /* no pull-to-refresh / bounce */
+  touch-action: none;               /* no double-tap zoom or scroll gestures */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;      /* no long-press menu */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.touch body {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Game on top (2:3 portrait area), as wide as possible while leaving at least
+   120px for the control strip below. */
+html.touch canvas {
+  flex: none;
+  border: none;
+  max-width: none;
+  max-height: none;
+  width: min(100vw, calc((100vh - 120px) / 1.5));
+  width: min(100vw, calc((100dvh - 120px - env(safe-area-inset-top)) / 1.5));
+  height: auto;
+  touch-action: none;
+}
+
+html.touch #hint { display: none; }
+
+html.touch #touchpad {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 120px;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid #2a2a2a;
+  background:
+    radial-gradient(circle at center, rgba(255, 212, 0, 0.06), transparent 70%),
+    #050505;
+  color: #666;
+  font-size: 12px;
+  letter-spacing: 1px;
+  touch-action: none;
+}
+
+/* Phone held sideways: the game takes the full height; steer on the game itself. */
+@media (orientation: landscape) {
+  html.touch canvas { width: auto; height: 100vh; height: 100dvh; }
+  html.touch #touchpad { display: none; }
+}
+
+/* Name box higher up so the on-screen keyboard doesn't cover it. */
+html.touch #nameEntry { top: 22%; transform: translate(-50%, 0); }
+
 #nameEntry {
   position: fixed;
   left: 50%;

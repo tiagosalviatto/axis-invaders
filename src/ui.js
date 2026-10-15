@@ -43,5 +43,8 @@
     });
   }
 
-  ns.ui = { begin, add, attach, toCanvas };
+  // The button under a pointer event, if any (lets touch steering skip buttons).
+  function buttonAt(e) { return canvas ? hit(toCanvas(e)) : null; }
+
+  ns.ui = { begin, add, attach, toCanvas, buttonAt };
 })();

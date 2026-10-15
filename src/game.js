@@ -80,6 +80,13 @@
           if (e.key === 'Escape') { e.preventDefault(); this.cancelName(); }
         });
       }
+
+      // Auto-pause when the tab/app goes to the background (call, notification, app switch).
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) return;
+        if (this.state === STATES.PLAY) this.paused = true;
+        if (ns.touch) ns.touch.release();
+      });
     }
 
     startStage(idx) {
@@ -638,10 +645,11 @@
     // Win: the overall score is saved under the player's name; show the overall board.
     drawWin() {
       const cx = this.w / 2;
-      this.text('YOU WIN!', cx, 70, 50, '#FFD400');
-      this.text(`${this.playerName}  ·  SCORE ${String(this.score).padStart(6, '0')}`, cx, 112, 20, '#fff');
-      this.text('RANKING GERAL', cx, 152, 18, '#FFD400');
-      this.drawScoreTable(182);
+      const oy = this.oy;
+      this.text('YOU WIN!', cx, 70 + oy, 50, '#FFD400');
+      this.text(`${this.playerName}  ·  SCORE ${String(this.score).padStart(6, '0')}`, cx, 112 + oy, 20, '#fff');
+      this.text('RANKING GERAL', cx, 152 + oy, 18, '#FFD400');
+      this.drawScoreTable(182 + oy);
       if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
       this.button('MENU' + this.kb('SPACE'), cx - 130, this.h - 40, 230, 40, 'confirm', { primary: true });
       this.button('RANKING' + this.kb('R'), cx + 130, this.h - 40, 230, 40, 'ranking');
@@ -651,22 +659,25 @@
     drawRanking() {
       const cx = this.w / 2;
       const tabs = this.rankingTabs();
-      this.text('RANKING', cx, 48, 36, '#FFD400');
+      const oy = this.oy;
+      this.text('RANKING', cx, 48 + oy, 36, '#FFD400');
 
-      // Tab strip (centered); the active tab is highlighted.
-      const tabW = 128, gap = 10;
+      // Tab strip (centered); the active tab is highlighted. Tabs shrink to fit
+      // the width when more stages are added.
+      const gap = 10;
+      const tabW = Math.min(128, Math.floor((this.w - 40 - gap * (tabs.length - 1)) / tabs.length));
       const totalW = tabs.length * tabW + (tabs.length - 1) * gap;
       let tx = cx - totalW / 2 + tabW / 2;
       tabs.forEach((t, i) => {
-        this.button(t.label, tx, 94, tabW, 34, 'tab', { primary: i === this.rankingTab, size: 15, payload: i });
+        this.button(t.label, tx, 94 + oy, tabW, 34, 'tab', { primary: i === this.rankingTab, size: 15, payload: i });
         tx += tabW + gap;
       });
 
       const cur = tabs[this.rankingTab];
       const sub = cur.stageId ? cur.stage.name : 'quem bateu o ponto até o fim';
-      this.text(sub + (this.touchMode ? '' : '   (← → troca a aba)'), cx, 130, 13, '#888');
+      this.text(sub + (this.touchMode ? '' : '   (← → troca a aba)'), cx, 130 + oy, 13, '#888');
 
-      this.drawScoreTable(160);
+      this.drawScoreTable(160 + oy);
       this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 260, 40, 'back', { primary: true });
     }
 
@@ -681,12 +692,13 @@
     // Stage cleared: this stage's result + the leaderboard of this stage only.
     drawStageClear(stage) {
       const cx = this.w / 2;
-      this.text(`FASE ${this.stageIdx + 1} CONCLUÍDA`, cx, 54, 38, '#FFD400');
-      this.text(stage.name, cx, 92, 18, '#fff');
+      const oy = this.oy;
+      this.text(`FASE ${this.stageIdx + 1} CONCLUÍDA`, cx, 54 + oy, 38, '#FFD400');
+      this.text(stage.name, cx, 92 + oy, 18, '#fff');
       this.text(`${this.playerName}  ·  PONTOS ${String(this.clearStageScore).padStart(6, '0')}  ·  TEMPO ${this.fmtTime(this.clearStageTime)}`,
-        cx, 124, 15, '#ddd');
-      this.text('RANKING DA FASE', cx, 158, 16, '#FFD400');
-      this.drawScoreTable(186);
+        cx, 124 + oy, 15, '#ddd');
+      this.text('RANKING DA FASE', cx, 158 + oy, 16, '#FFD400');
+      this.drawScoreTable(186 + oy);
       if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
       const last = this.stageIdx >= ns.stages.length - 1;
       this.button((last ? 'FINALIZAR' : 'CONTINUAR') + this.kb('SPACE'), cx, this.h - 40, 280, 44, 'confirm',
@@ -749,9 +761,10 @@
       }
       const bars = ns.ships.statBars();
 
-      this.text('SELECT YOUR SHIP', this.w / 2, 70, 40, '#fff');
+      const oy = this.oy;
+      this.text('SELECT YOUR SHIP', this.w / 2, 70 + oy, 40, '#fff');
       this.text(this.touchMode ? 'toque numa nave para escolher' : '← →  escolher    Space / Enter  confirmar',
-        this.w / 2, 110, 15, '#888');
+        this.w / 2, 110 + oy, 15, '#888');
 
       const n = ns.ships.order.length;
       const slotW = this.w / n;
@@ -764,7 +777,7 @@
         // Card backdrop + highlight for the active selection.
         const cardW = slotW - 36;
         const cardX = cx - cardW / 2;
-        const cardY = 150;
+        const cardY = 150 + oy;
         const cardH = 300;
         ctx.fillStyle = selected ? 'rgba(255,212,0,0.10)' : 'rgba(255,255,255,0.04)';
         ctx.fillRect(cardX, cardY, cardW, cardH);
@@ -785,7 +798,7 @@
         this.drawStatBar('FIRE',  cardX + 20, cardY + 215, cardW - 40, bars[id].fireRate);
       }
 
-      this.button('LANÇAR' + this.kb('SPACE'), this.w / 2, this.h - 70, 280, 50, 'confirm', { primary: true, size: 22 });
+      this.button('LANÇAR' + this.kb('SPACE'), this.w / 2, 530 + oy, 280, 50, 'confirm', { primary: true, size: 22 });
     }
 
     drawStatBar(label, x, y, w, ratio) {
@@ -818,7 +831,7 @@
         const appear = Math.min(1, t / 0.6);
         const scale = Math.min(1, 320 / boss.width, 200 / boss.height);
         const bw = boss.width * scale, bh = boss.height * scale;
-        const by = 64 - (1 - appear) * 40 + Math.sin(t * 2) * 6;
+        const by = 64 + this.oy - (1 - appear) * 40 + Math.sin(t * 2) * 6;
         ctx.save();
         ctx.globalAlpha = appear;
         ctx.imageSmoothingEnabled = false;
@@ -827,10 +840,11 @@
       }
 
       // Level badge + stage name + accent divider.
-      this.text(`NÍVEL ${this.stageIdx + 1}`, cx, 300, 18, accent);
-      this.text(stage.name, cx, 332, 34, '#fff');
+      const oy = this.oy;
+      this.text(`NÍVEL ${this.stageIdx + 1}`, cx, 300 + oy, 18, accent);
+      this.text(stage.name, cx, 332 + oy, this.fitSize(stage.name, 34, this.w - 40), '#fff');
       ctx.fillStyle = accent;
-      ctx.fillRect(cx - 120, 350, 240, 2);
+      ctx.fillRect(cx - 120, 350 + oy, 240, 2);
 
       // Narrative text with typewriter reveal + blinking cursor while typing.
       const text = stage.story || '';
@@ -842,7 +856,7 @@
         if (lines.length) lines[lines.length - 1] += cursor;
         else lines.push(cursor);
       }
-      let ty = 386;
+      let ty = 386 + oy;
       for (const ln of lines) { this.text(ln, cx, ty, 19, '#eaeaea'); ty += 28; }
 
       // Player ship sliding up from the bottom.
@@ -882,7 +896,7 @@
       const ctx = this.ctx;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, this.h / 2 - 70, this.w, 140);
-      this.text(stage.name, this.w / 2, this.h / 2 - 18, 48, '#fff');
+      this.text(stage.name, this.w / 2, this.h / 2 - 18, this.fitSize(stage.name, 48, this.w - 40), '#fff');
       this.text(stage.subtitle, this.w / 2, this.h / 2 + 26, 15, '#bbb');
     }
 
@@ -894,7 +908,23 @@
       this.text(`STAGE ${this.stageIdx + 1}/${ns.stages.length}`, this.w / 2, 16, 16, '#fff');
       const lives = '♥'.repeat(Math.max(0, this.lives)) +
                     '·'.repeat(Math.max(0, 3 - this.lives));
-      this.text(`LIVES ${lives}`, this.w - 16, 16, 16, '#fff', 'right');
+      if (!this.touchMode) {
+        this.text(`LIVES ${lives}`, this.w - 16, 16, 16, '#fff', 'right');
+        return;
+      }
+      // Touch: pause button in the corner (no P key on a phone). Its tap area is
+      // larger than the drawn button so it's easy to hit with a thumb.
+      this.text(lives, this.w - 72, 16, 16, '#fff', 'right');
+      const bx = this.w - 40, by = 16;
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(bx - 22, by - 13, 44, 26);
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx - 21, by - 12, 42, 24);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(bx - 7, by - 7, 4, 14);
+      ctx.fillRect(bx + 3, by - 7, 4, 14);
+      if (this.state === STATES.PLAY) ns.ui.add({ x: this.w - 80, y: 0, w: 80, h: 56 }, 'pause');
     }
 
     // Canvas button: draws it and registers its rect for mouse/touch hit-testing.
@@ -919,6 +949,18 @@
     }
 
     get touchMode() { return ns.input.mode === 'touch'; }
+
+    // Extra vertical offset that re-centers 600px-tall layouts on a taller
+    // (portrait) canvas. 0 on desktop, so desktop layouts are unchanged.
+    get oy() { return Math.max(0, (this.h - 600) / 2); }
+
+    // Largest font size <= `size` at which `str` fits in `maxW` (long stage names
+    // on the narrower portrait canvas).
+    fitSize(str, size, maxW) {
+      this.ctx.font = `bold ${size}px "Courier New", Consolas, monospace`;
+      const w = this.ctx.measureText(str).width;
+      return w > maxW ? Math.floor(size * maxW / w) : size;
+    }
 
     text(str, x, y, size, color, align) {
       const ctx = this.ctx;

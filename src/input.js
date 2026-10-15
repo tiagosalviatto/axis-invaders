@@ -24,6 +24,9 @@
   // Last input method used — drives on-screen hints ("Space" vs "toque").
   let mode = 'keyboard';
 
+  // Accumulated touch-drag movement (logical canvas px) since the last frame.
+  let dragX = 0, dragY = 0;
+
   // Don't capture/preventDefault while typing in a form field (e.g. the
   // player name input) — otherwise Space and arrows wouldn't type.
   function isTextField(e) {
@@ -92,11 +95,20 @@
     trigger(action, payload) { vpressed[action] = payload === undefined ? true : payload; },
     setHeld(action, on) { vheld[action] = !!on; },
 
+    // Touch steering: the touch layer adds drag deltas; the ship consumes them once per frame.
+    addDrag(dx, dy) { dragX += dx; dragY += dy; },
+    takeDrag() {
+      const d = { dx: dragX, dy: dragY };
+      dragX = 0; dragY = 0;
+      return d;
+    },
+
     // Flush pending presses. Call when entering a "press to continue" screen
     // so a key held during gameplay (e.g. Space while firing) doesn't skip it.
     clear() {
       for (const k in pressed) pressed[k] = false;
       for (const a in vpressed) delete vpressed[a];
+      dragX = 0; dragY = 0;
     },
 
     get mode() { return mode; },
