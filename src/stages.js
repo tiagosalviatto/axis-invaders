@@ -3,6 +3,7 @@
 
   ns.stages = [
     {
+      id: 'cage',            // stable key for the per-stage leaderboard — never reuse/rename
       name: 'CAGE RAGE',
       subtitle: 'Stage 1 — Nicholas Cage invasion',
       story: 'Você deixou seu PC desbloqueado! Nicholas Cage quer possuir tua máquina!',
@@ -26,6 +27,7 @@
       }
     },
     {
+      id: 'byd',
       name: 'BYD VELOCITY',
       subtitle: 'Stage 2 — BYD pursuit',
       story: 'Você veio de carro para o escritório! Encare o trânsito!',
@@ -50,6 +52,7 @@
       }
     },
     {
+      id: 'samba',
       name: 'SAMBA AGREGADO INFORMAL',
       subtitle: 'Stage 3 — enSAI de quinta',
       story: 'Happy hour com o time! O samba rola até o rapa aparecer.',

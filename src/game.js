@@ -1,10 +1,24 @@
 (function () {
   const ns = (window.AxisInvaders = window.AxisInvaders || {});
 
-  const STATES = { MENU: 'menu', SELECT: 'select', STORY: 'story', INTRO: 'intro', PLAY: 'play', OVER: 'over', WIN: 'win', RANKING: 'ranking' };
+  const STATES = {
+    MENU: 'menu', SELECT: 'select', NAME: 'name', STORY: 'story', INTRO: 'intro',
+    PLAY: 'play', CLEAR: 'clear', OVER: 'over', WIN: 'win', RANKING: 'ranking'
+  };
 
   const STORY_CPS = 38;            // typewriter speed (characters per second)
   const STORY_AUTO_ADVANCE = 6;    // seconds after the text completes before auto-advancing
+
+  // The player's name is remembered on the device and pre-filled next time.
+  const NAME_KEY = 'axis-invaders-name';
+  function loadName() { try { return localStorage.getItem(NAME_KEY) || ''; } catch (e) { return ''; } }
+  function saveName(n) { try { localStorage.setItem(NAME_KEY, n); } catch (e) { /* ignore */ } }
+
+  // 'mobile' when the device has a coarse pointer (finger) or touch was used.
+  function detectDevice() {
+    const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    return (coarse || ns.input.mode === 'touch') ? 'mobile' : 'web';
+  }
 
   class Game {
     constructor(canvas) {
@@ -42,19 +56,28 @@
       // Scoring / high-score table
       this.stageTime = 0;      // seconds elapsed in the current stage (PLAY only)
       this.stageTimes = [];    // recorded clear time per completed stage
-      this.scores = [];        // snapshot of the table on the end screen
-      this.awaitingName = false;
+      this.scores = [];        // rows of the leaderboard currently on screen
       this.boardLoading = false;
       this.boardOffline = false;
-      this.submitting = false;
+      this.boardReq = 0;       // guards against a slow response overwriting a newer board
       this.myEntryKey = null;  // highlights the player's own row
+      this.rankingTab = 0;     // 0 = overall, 1..N = stage N
+
+      // Player identity + per-stage result (for the stage leaderboard)
+      this.playerName = loadName();
+      this.device = 'web';
+      this.stageScoreStart = 0; // score when the current stage began
+      this.clearStageScore = 0; // points earned in the stage just cleared
+      this.clearStageTime = 0;  // seconds taken by the stage just cleared
+
       this.nameEl = document.getElementById('nameEntry');
       this.nameInput = document.getElementById('nameInput');
       const saveBtn = document.getElementById('nameSave');
-      if (saveBtn) saveBtn.addEventListener('click', () => this.submitName());
+      if (saveBtn) saveBtn.addEventListener('click', () => this.confirmName());
       if (this.nameInput) {
         this.nameInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); this.submitName(); }
+          if (e.key === 'Enter') { e.preventDefault(); this.confirmName(); }
+          if (e.key === 'Escape') { e.preventDefault(); this.cancelName(); }
         });
       }
     }
@@ -75,6 +98,7 @@
       this.bgState = {};
       this.paused = false;
       this.stageTime = 0;
+      this.stageScoreStart = this.score;
       // Open with the narrative transition; gameplay board is built and waiting behind it.
       ns.input.clear(); // avoid a held key from the previous stage skipping the cutscene
       this.state = STATES.STORY;
@@ -94,7 +118,7 @@
       this.score = 0;
       this.lives = 3;
       this.stageTimes = [];
-      this.awaitingName = false;
+      this.device = detectDevice();
       this.hideNameEntry();
       this.startStage(0);
     }
@@ -165,67 +189,124 @@
       this.bosses.push(make('spread', this.w * 0.70, Math.PI, 1300, 280));
     }
 
-    // Transition into an end screen. Only finishers (WIN) are recorded and see
-    // the ranking inline; OVER shows just the "clock out" message (the ranking
-    // is reachable from there via R).
+    // Transition into an end screen. A win records the overall score under the
+    // name given at the start; game over records nothing more (the stages the
+    // player cleared were already saved to their own boards).
     endGame(state) {
       ns.input.clear(); // drop keys held during play so the screen isn't skipped
       this.state = state;
-      this.scores = [];
-      this.boardLoading = false;
-      this.boardOffline = false;
-      this.submitting = false;
+      this.hideNameEntry();
       this.myEntryKey = null;
-      this.awaitingName = (state === STATES.WIN);
-      if (this.awaitingName) this.showNameEntry();
-      else this.hideNameEntry();
+      if (state === STATES.WIN) {
+        const total = Math.round(this.stageTimes.reduce((a, b) => a + b, 0) * 10) / 10;
+        this.saveScore({
+          name: this.playerName,
+          score: this.score,
+          total_time: total,
+          ship: this.shipId,
+          stage_times: this.stageTimes.slice(),
+          device: this.device
+        }, null);
+      }
+    }
+
+    // Save an entry to a board (stageId null = overall) and show that board.
+    saveScore(entry, stageId) {
+      this.myEntryKey = entry.name + '|' + entry.score + '|' + entry.ship;
+      this.loadBoard(() => ns.scoreboard.submit(entry, stageId));
+    }
+
+    // Fetch/refresh the board on screen. `request` returns a promise of either a
+    // list or { list, offline }. A newer request supersedes older ones.
+    loadBoard(request) {
+      const req = ++this.boardReq;
+      this.scores = [];
+      this.boardLoading = true;
+      this.boardOffline = false;
+      request().then(res => {
+        if (req !== this.boardReq) return;
+        this.scores = Array.isArray(res) ? res : res.list;
+        this.boardOffline = !Array.isArray(res) && !!res.offline;
+        this.boardLoading = false;
+      });
+    }
+
+    // Ranking tabs: 0 = overall, then one per stage (new stages appear by themselves).
+    rankingTabs() {
+      return [{ label: 'GERAL', stageId: null }].concat(
+        ns.stages.map((s, i) => ({ label: 'FASE ' + (i + 1), stageId: s.id, stage: s }))
+      );
     }
 
     // Open the global high-scores screen, remembering where to return to.
     openRanking(fromState) {
       ns.audio.enable();
+      ns.input.clear();
       this.rankingFrom = fromState;
       this.state = STATES.RANKING;
-      this.scores = [];
-      this.boardLoading = true;
-      ns.scoreboard.fetchTop().then(list => {
-        this.scores = list;
-        this.boardLoading = false;
-      });
+      this.setRankingTab(0);
     }
 
-    showNameEntry() {
-      if (!this.nameEl) return;
+    setRankingTab(i) {
+      const tabs = this.rankingTabs();
+      this.rankingTab = ((i % tabs.length) + tabs.length) % tabs.length;
+      const stageId = tabs[this.rankingTab].stageId;
+      this.loadBoard(() => ns.scoreboard.fetchTop(stageId));
+    }
+
+    // Name prompt, shown after the ship is chosen and before the game starts.
+    openNameEntry() {
+      ns.input.clear();
+      this.state = STATES.NAME;
+      if (!this.nameEl) { this.confirmName(); return; }
       this.nameEl.classList.remove('hidden');
-      if (this.nameInput) { this.nameInput.value = ''; this.nameInput.focus(); }
+      if (this.nameInput) {
+        this.nameInput.value = this.playerName;
+        this.nameInput.focus();
+        this.nameInput.select();
+      }
     }
 
     hideNameEntry() {
       if (this.nameEl) this.nameEl.classList.add('hidden');
+      if (this.nameInput) this.nameInput.blur(); // give the keyboard back to the game
     }
 
-    submitName() {
-      if (!this.awaitingName || this.submitting) return;
-      const name = ((this.nameInput && this.nameInput.value) || '').trim().slice(0, 16) || 'ANON';
-      const total = Math.round(this.stageTimes.reduce((a, b) => a + b, 0) * 10) / 10;
-      const entry = {
-        name,
-        score: this.score,
-        total_time: total,
-        ship: this.shipId,
-        stage_times: this.stageTimes.slice()
-      };
-      this.myEntryKey = name + '|' + this.score + '|' + this.shipId;
-      this.submitting = true;
-      this.boardLoading = true;
-      this.awaitingName = false;
+    confirmName() {
+      if (this.state !== STATES.NAME) return;
+      const typed = ((this.nameInput && this.nameInput.value) || '').trim().slice(0, 16);
+      this.playerName = typed || 'ANON';
+      saveName(this.playerName);
+      this.startGame();
+    }
+
+    cancelName() {
+      if (this.state !== STATES.NAME) return;
       this.hideNameEntry();
-      ns.scoreboard.submit(entry).then(res => {
-        this.scores = res.list;
-        this.boardOffline = !!res.offline;
-        this.boardLoading = false;
-        this.submitting = false;
-      });
+      ns.input.clear();
+      this.state = STATES.SELECT;
+    }
+
+    // Stage just cleared: save its result to that stage's board and show it.
+    enterStageClear() {
+      ns.input.clear(); // Space held while firing must not skip this screen
+      const stage = ns.stages[this.stageIdx];
+      this.clearStageScore = Math.max(0, this.score - this.stageScoreStart);
+      this.clearStageTime = Math.max(0.1, this.stageTimes[this.stageTimes.length - 1] || 0);
+      this.state = STATES.CLEAR;
+      this.saveScore({
+        stage: stage.id,
+        name: this.playerName,
+        score: this.clearStageScore,
+        total_time: this.clearStageTime,
+        ship: this.shipId,
+        device: this.device
+      }, stage.id);
+    }
+
+    continueAfterClear() {
+      if (this.stageIdx < ns.stages.length - 1) this.startStage(this.stageIdx + 1);
+      else this.endGame(STATES.WIN);
     }
 
     update(dt) {
@@ -244,10 +325,26 @@
       }
 
       if (this.state === STATES.RANKING) {
-        if (ns.input.anyPressed()) {
+        const tab = ns.input.take('tab'); // tapped/clicked a tab
+        if (tab !== null) this.setRankingTab(tab);
+        if (ns.input.pressed('left')) this.setRankingTab(this.rankingTab - 1);
+        if (ns.input.pressed('right')) this.setRankingTab(this.rankingTab + 1);
+        if (ns.input.pressed('back') || ns.input.pressed('confirm') || ns.input.pressed('ranking')) {
           ns.input.clear();
           this.state = this.rankingFrom || STATES.MENU;
         }
+        return;
+      }
+
+      if (this.state === STATES.NAME) {
+        // Typing/Enter are handled by the name form itself; this is the canvas
+        // VOLTAR button (or Esc once the field lost focus).
+        if (ns.input.pressed('back')) this.cancelName();
+        return;
+      }
+
+      if (this.state === STATES.CLEAR) {
+        if (ns.input.pressed('confirm')) this.continueAfterClear();
         return;
       }
 
@@ -268,7 +365,7 @@
         }
         if (ns.input.pressed('confirm')) {
           this.shipId = ns.ships.order[this.selIdx];
-          this.startGame();
+          this.openNameEntry();
         }
         return;
       }
@@ -289,7 +386,6 @@
       }
 
       if (this.state === STATES.WIN) {
-        if (this.awaitingName) return; // block until the name is submitted
         if (ns.input.pressed('ranking')) { this.openRanking(STATES.WIN); return; }
         if (ns.input.anyPressed()) { ns.input.clear(); this.state = STATES.MENU; }
         return;
@@ -459,11 +555,11 @@
       if (this.reinforcements > 0) this.reinforcements -= dt;
     }
 
-    // Award the stage bonus and move on (next stage or final win).
+    // Award the stage bonus, save + show the stage leaderboard; the player then
+    // continues to the next stage (or the final win screen).
     advanceStage() {
       this.finishStage();
-      if (this.stageIdx < ns.stages.length - 1) this.startStage(this.stageIdx + 1);
-      else this.endGame(STATES.WIN);
+      this.enterStageClear();
     }
 
     draw(t) {
@@ -491,6 +587,9 @@
         this.drawStory(stage);
         return;
       }
+
+      if (this.state === STATES.NAME) { this.drawName(); return; }
+      if (this.state === STATES.CLEAR) { this.drawStageClear(stage); return; }
 
       if (this.state === STATES.PLAY || this.state === STATES.INTRO) {
         this.player.draw(ctx);
@@ -536,30 +635,62 @@
       this.button('RANKING' + this.kb('R'), cx, this.h / 2 + 138, 320, 40, 'ranking');
     }
 
-    // Win: finisher registers a name, then sees the global ranking inline.
+    // Win: the overall score is saved under the player's name; show the overall board.
     drawWin() {
       const cx = this.w / 2;
       this.text('YOU WIN!', cx, 70, 50, '#FFD400');
-      this.text(`YOUR SCORE  ${String(this.score).padStart(6, '0')}`, cx, 112, 20, '#fff');
-      if (this.awaitingName) {
-        this.text('VOCÊ CHEGOU AO FIM!', cx, 172, 26, '#FFD400');
-        this.text('registre seu nome no ranking — digite e tecle Enter', cx, 208, 13, '#aaa');
-        return; // the DOM input overlay is shown over the canvas center
-      }
-      this.text('RANKING GLOBAL', cx, 152, 18, '#FFD400');
+      this.text(`${this.playerName}  ·  SCORE ${String(this.score).padStart(6, '0')}`, cx, 112, 20, '#fff');
+      this.text('RANKING GERAL', cx, 152, 18, '#FFD400');
       this.drawScoreTable(182);
       if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
       this.button('MENU' + this.kb('SPACE'), cx - 130, this.h - 40, 230, 40, 'confirm', { primary: true });
       this.button('RANKING' + this.kb('R'), cx + 130, this.h - 40, 230, 40, 'ranking');
     }
 
-    // Standalone global high-scores screen (reachable from menu / game over).
+    // Global high-scores screen with tabs: overall + one per stage.
     drawRanking() {
       const cx = this.w / 2;
-      this.text('RANKING GLOBAL', cx, 66, 40, '#FFD400');
-      this.text('os melhores que bateram o ponto', cx, 104, 14, '#888');
-      this.drawScoreTable(146);
+      const tabs = this.rankingTabs();
+      this.text('RANKING', cx, 48, 36, '#FFD400');
+
+      // Tab strip (centered); the active tab is highlighted.
+      const tabW = 128, gap = 10;
+      const totalW = tabs.length * tabW + (tabs.length - 1) * gap;
+      let tx = cx - totalW / 2 + tabW / 2;
+      tabs.forEach((t, i) => {
+        this.button(t.label, tx, 94, tabW, 34, 'tab', { primary: i === this.rankingTab, size: 15, payload: i });
+        tx += tabW + gap;
+      });
+
+      const cur = tabs[this.rankingTab];
+      const sub = cur.stageId ? cur.stage.name : 'quem bateu o ponto até o fim';
+      this.text(sub + (this.touchMode ? '' : '   (← → troca a aba)'), cx, 130, 13, '#888');
+
+      this.drawScoreTable(160);
       this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 260, 40, 'back', { primary: true });
+    }
+
+    // Name prompt (the text field itself is the DOM overlay in the middle).
+    drawName() {
+      const cx = this.w / 2;
+      this.text('QUEM ESTÁ JOGANDO?', cx, 110, 34, '#fff');
+      this.text('seu nome vai para o ranking de cada fase que você concluir', cx, 150, 14, '#aaa');
+      this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 220, 38, 'back');
+    }
+
+    // Stage cleared: this stage's result + the leaderboard of this stage only.
+    drawStageClear(stage) {
+      const cx = this.w / 2;
+      this.text(`FASE ${this.stageIdx + 1} CONCLUÍDA`, cx, 54, 38, '#FFD400');
+      this.text(stage.name, cx, 92, 18, '#fff');
+      this.text(`${this.playerName}  ·  PONTOS ${String(this.clearStageScore).padStart(6, '0')}  ·  TEMPO ${this.fmtTime(this.clearStageTime)}`,
+        cx, 124, 15, '#ddd');
+      this.text('RANKING DA FASE', cx, 158, 16, '#FFD400');
+      this.drawScoreTable(186);
+      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
+      const last = this.stageIdx >= ns.stages.length - 1;
+      this.button((last ? 'FINALIZAR' : 'CONTINUAR') + this.kb('SPACE'), cx, this.h - 40, 280, 44, 'confirm',
+        { primary: true, size: 20 });
     }
 
     // Shared high-scores table; `top` is the header baseline. Handles the
@@ -569,21 +700,24 @@
       if (this.boardLoading) { this.text('carregando…', cx, top + 30, 16, '#aaa'); return; }
       const list = this.scores || [];
       if (!list.length) { this.text('(sem pontuações ainda)', cx, top + 30, 15, '#888'); return; }
-      this.text('#',     cx - 250, top, 12, '#777', 'left');
-      this.text('NOME',  cx - 215, top, 12, '#777', 'left');
-      this.text('NAVE',  cx + 35,  top, 12, '#777', 'left');
-      this.text('TEMPO', cx + 130, top, 12, '#777', 'left');
-      this.text('SCORE', cx + 250, top, 12, '#777', 'right');
+      const DEVICE = { web: 'WEB', mobile: 'MOB' };
+      this.text('#',     cx - 262, top, 12, '#777', 'left');
+      this.text('NOME',  cx - 228, top, 12, '#777', 'left');
+      this.text('NAVE',  cx + 20,  top, 12, '#777', 'left');
+      this.text('DISP',  cx + 92,  top, 12, '#777', 'left');
+      this.text('TEMPO', cx + 160, top, 12, '#777', 'left');
+      this.text('SCORE', cx + 262, top, 12, '#777', 'right');
       let y = top + 24;
       for (let i = 0; i < list.length && y < this.h - 70; i++) {
         const e = list[i];
         const key = e.name + '|' + e.score + '|' + e.ship;
         const rowColor = (this.myEntryKey && key === this.myEntryKey) ? '#FFD400' : '#ddd';
-        this.text(String(i + 1).padStart(2, ' '), cx - 250, y, 15, rowColor, 'left');
-        this.text(e.name, cx - 215, y, 15, rowColor, 'left');
-        this.text(e.ship || '-', cx + 35, y, 15, rowColor, 'left');
-        this.text(this.fmtTime(e.total_time), cx + 130, y, 15, rowColor, 'left');
-        this.text(String(e.score).padStart(6, '0'), cx + 250, y, 15, rowColor, 'right');
+        this.text(String(i + 1).padStart(2, ' '), cx - 262, y, 15, rowColor, 'left');
+        this.text(e.name, cx - 228, y, 15, rowColor, 'left');
+        this.text(e.ship || '-', cx + 20, y, 15, rowColor, 'left');
+        this.text(DEVICE[e.device] || '—', cx + 92, y, 15, rowColor, 'left');
+        this.text(this.fmtTime(e.total_time), cx + 160, y, 15, rowColor, 'left');
+        this.text(String(e.score).padStart(6, '0'), cx + 262, y, 15, rowColor, 'right');
         y += 24;
       }
     }
@@ -757,7 +891,7 @@
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
       ctx.fillRect(0, 0, this.w, 32);
       this.text(`SCORE ${String(this.score).padStart(5, '0')}`, 16, 16, 16, '#fff', 'left');
-      this.text(`STAGE ${this.stageIdx + 1}/3`, this.w / 2, 16, 16, '#fff');
+      this.text(`STAGE ${this.stageIdx + 1}/${ns.stages.length}`, this.w / 2, 16, 16, '#fff');
       const lives = '♥'.repeat(Math.max(0, this.lives)) +
                     '·'.repeat(Math.max(0, 3 - this.lives));
       this.text(`LIVES ${lives}`, this.w - 16, 16, 16, '#fff', 'right');
