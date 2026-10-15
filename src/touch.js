@@ -1,11 +1,12 @@
 (function () {
   const ns = (window.AxisInvaders = window.AxisInvaders || {});
 
-  // Touch steering. Drag (relative, like a trackpad) on the control strip below
-  // the game — or on the game itself during play — to steer; the ship fires
-  // automatically while a finger is down. The ship chases the drag target at
-  // its own top speed (see Player.update), so each ship keeps its speed identity.
-  const SENSITIVITY = 1.4; // ship travel per finger travel, in screen space
+  // Touch steering. Drag anywhere on the game (relative, like a trackpad) to
+  // steer; the ship fires automatically while a finger is down. The ship chases
+  // the drag target at its own top speed (see Player.update), so each ship keeps
+  // its speed identity. On phones the ship rests above a thumb area at the
+  // bottom of the screen, so the finger doesn't cover it.
+  const SENSITIVITY = 2.1; // ship travel per finger travel, in screen space
 
   let canvas = null;
   let active = null; // the steering pointer: { id, x, y }
@@ -15,9 +16,15 @@
     return !!g && g.state === 'play' && !g.paused;
   }
 
-  function start(e, el) {
+  // In the phone layout any pointer steers (so the mouse works when testing
+  // with ?portrait); on the desktop layout the mouse doesn't steer.
+  function canSteer(e) {
+    return e.pointerType !== 'mouse' || document.documentElement.classList.contains('touch');
+  }
+
+  function start(e) {
     active = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    try { el.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* not supported */ }
     ns.input.setHeld('fire', true);
   }
 
@@ -40,34 +47,18 @@
     ns.input.setHeld('fire', false);
   }
 
-  function attach(cv, pad) {
+  function attach(cv) {
     canvas = cv;
-
-    // On the game itself: touch/pen only, during play, and not on a button.
+    // During play, a press anywhere on the game (except on a button) starts steering.
     cv.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' || active || !playing()) return;
+      if (active || !playing() || !canSteer(e)) return;
       if (ns.ui.buttonAt(e)) return;
-      start(e, cv);
+      start(e);
     });
-
-    if (pad) {
-      pad.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        if (e.pointerType !== 'mouse') ns.input.setMode('touch');
-        if (ns.audio) ns.audio.enable(); // unlock audio inside the gesture (iOS)
-        if (playing()) { if (!active) start(e, pad); }
-        else ns.input.trigger('tap'); // outside play the strip works like tapping the screen
-      });
-    }
-
-    [cv, pad].forEach((el) => {
-      if (!el) return;
-      el.addEventListener('pointermove', move);
-      el.addEventListener('pointerup', end);
-      el.addEventListener('pointercancel', end);
-      el.addEventListener('contextmenu', (ev) => ev.preventDefault());
-    });
-
+    cv.addEventListener('pointermove', move);
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('contextmenu', (ev) => ev.preventDefault());
     window.addEventListener('blur', () => end());
   }
 

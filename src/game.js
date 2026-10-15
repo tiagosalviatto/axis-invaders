@@ -41,6 +41,10 @@
       this.ctx.imageSmoothingEnabled = false;
       this.phone = document.documentElement.classList.contains('touch');
       this.S = this.phone ? PHONE_UI : 1;
+      // Phone held upright: keep a thumb area at the bottom (part of the game
+      // scenery, the ship just rests above it) so the steering finger doesn't
+      // cover the ship. 0 on desktop.
+      this.thumbZone = (this.phone && this.h > this.w) ? Math.round(this.h * 0.14) : 0;
 
       this.state = STATES.MENU;
       this.stageIdx = 0;
@@ -108,7 +112,8 @@
       const stage = ns.stages[idx];
       this.sprites = ns.sprites.buildStageSprites(idx, this.shipId);
       this.player = new ns.entities.Player(
-        this.w, this.h, this.sprites.player, ns.ships.defs[this.shipId]
+        this.w, this.h, this.sprites.player,
+        Object.assign({ bottomPad: this.thumbZone }, ns.ships.defs[this.shipId])
       );
       this.grid = new ns.entities.EnemyGrid(stage, this.sprites, this.w);
       this.bosses.length = 0;
@@ -630,6 +635,12 @@
           this.text('REFORÇOS!', this.w / 2, this.h * 0.42, 46, '#FF3030');
           this.text('a viatura chamou apoio!', this.w / 2, this.h * 0.42 + 38, 16, '#FFD45A');
         }
+        // Phones: brief steering hint in the thumb area (no control strip anymore).
+        if (this.thumbZone && this.touchMode &&
+            (this.state === STATES.INTRO || (this.stageIdx === 0 && this.stageTime < 4))) {
+          this.text('arraste em qualquer lugar para mover · tiro automático',
+            this.w / 2, this.h - this.thumbZone / 2, 14, 'rgba(255,255,255,0.5)');
+        }
         if (this.state === STATES.INTRO) this.drawIntro(stage);
         if (this.flash > 0) {
           ctx.fillStyle = `rgba(255,80,80,${Math.min(1, this.flash * 1.6) * 0.55})`;
@@ -668,16 +679,16 @@
       this.text('RANKING GERAL', cx, 152 + oy, 18, '#FFD400');
       if (this.phone) {
         // Bigger buttons don't fit side by side on the narrow canvas: stack them.
-        this.drawScoreTable(182 + oy, this.h - 170);
-        if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 152, 12, '#d99');
-        this.button('MENU', cx, this.h - 106, 300, 44, 'confirm', { primary: true });
-        this.button('RANKING', cx, this.h - 40, 300, 40, 'ranking');
+        this.drawScoreTable(182 + oy, this.fb - 170);
+        if (this.boardOffline) this.text('offline — salvo localmente', cx, this.fb - 152, 12, '#d99');
+        this.button('MENU', cx, this.fb - 106, 300, 44, 'confirm', { primary: true });
+        this.button('RANKING', cx, this.fb - 40, 300, 40, 'ranking');
         return;
       }
       this.drawScoreTable(182 + oy);
-      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
-      this.button('MENU' + this.kb('SPACE'), cx - 130, this.h - 40, 230, 40, 'confirm', { primary: true });
-      this.button('RANKING' + this.kb('R'), cx + 130, this.h - 40, 230, 40, 'ranking');
+      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.fb - 92, 12, '#d99');
+      this.button('MENU' + this.kb('SPACE'), cx - 130, this.fb - 40, 230, 40, 'confirm', { primary: true });
+      this.button('RANKING' + this.kb('R'), cx + 130, this.fb - 40, 230, 40, 'ranking');
     }
 
     // Global high-scores screen with tabs: overall + one per stage.
@@ -703,8 +714,8 @@
       const sub = cur.stageId ? cur.stage.name : 'quem bateu o ponto até o fim';
       this.text(sub + (this.touchMode ? '' : '   (← → troca a aba)'), cx, 130 + oy, 13, '#888');
 
-      this.drawScoreTable(160 + oy, this.phone ? this.h - 80 : undefined);
-      this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 260, 40, 'back', { primary: true });
+      this.drawScoreTable(160 + oy, this.phone ? this.fb - 80 : undefined);
+      this.button('VOLTAR' + this.kb('ESC'), cx, this.fb - 40, 260, 40, 'back', { primary: true });
     }
 
     // Name prompt (the text field itself is the DOM overlay in the middle).
@@ -712,7 +723,7 @@
       const cx = this.w / 2;
       this.text('QUEM ESTÁ JOGANDO?', cx, 110, 34, '#fff');
       this.text('seu nome vai para o ranking de cada fase que você concluir', cx, 150, 14, '#aaa');
-      this.button('VOLTAR' + this.kb('ESC'), cx, this.h - 40, 220, 38, 'back');
+      this.button('VOLTAR' + this.kb('ESC'), cx, this.fb - 40, 220, 38, 'back');
     }
 
     // Stage cleared: this stage's result + the leaderboard of this stage only.
@@ -724,10 +735,10 @@
       this.text(`${this.playerName}  ·  PONTOS ${String(this.clearStageScore).padStart(6, '0')}  ·  TEMPO ${this.fmtTime(this.clearStageTime)}`,
         cx, 124 + oy, 15, '#ddd');
       this.text('RANKING DA FASE', cx, 158 + oy, 16, '#FFD400');
-      this.drawScoreTable(186 + oy, this.phone ? this.h - 110 : undefined);
-      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.h - 92, 12, '#d99');
+      this.drawScoreTable(186 + oy, this.phone ? this.fb - 110 : undefined);
+      if (this.boardOffline) this.text('offline — salvo localmente', cx, this.fb - 92, 12, '#d99');
       const last = this.stageIdx >= ns.stages.length - 1;
-      this.button((last ? 'FINALIZAR' : 'CONTINUAR') + this.kb('SPACE'), cx, this.h - 40, 280, 44, 'confirm',
+      this.button((last ? 'FINALIZAR' : 'CONTINUAR') + this.kb('SPACE'), cx, this.fb - 40, 280, 44, 'confirm',
         { primary: true, size: 20 });
     }
 
@@ -736,7 +747,7 @@
     // `bottom`: rows stop before this y (defaults to h - 70).
     drawScoreTable(top, bottom) {
       const cx = this.w / 2;
-      bottom = bottom || this.h - 70;
+      bottom = bottom || this.fb - 70;
       if (this.boardLoading) { this.text('carregando…', cx, top + 30, 16, '#aaa'); return; }
       const list = this.scores || [];
       if (!list.length) { this.text('(sem pontuações ainda)', cx, top + 30, 15, '#888'); return; }
@@ -795,7 +806,7 @@
       this.button('JOGAR' + this.kb('SPACE'), this.w / 2, this.h / 2 + 70 * this.S, 260, 48, 'confirm', { primary: true, size: 22 });
       this.button('RANKING' + this.kb('R'), this.w / 2, this.h / 2 + 128 * this.S, 260, 40, 'ranking');
       if (!this.touchMode) {
-        this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.h - 40, 13, '#666');
+        this.text('arrows / WASD = move    Space = fire    P = pause', this.w / 2, this.fb - 40, 13, '#666');
       }
     }
 
@@ -911,7 +922,7 @@
       if (this.sprites && this.sprites.player) {
         const ship = this.sprites.player;
         const appear = Math.min(1, t / 0.8);
-        const sy = (this.h - 70) + (1 - appear) * 50;
+        const sy = (this.fb - 70) + (1 - appear) * 50;
         ctx.save();
         ctx.globalAlpha = appear;
         ctx.imageSmoothingEnabled = false;
@@ -921,7 +932,7 @@
 
       // Prompt once the text is fully revealed.
       if (full && (Math.floor(performance.now() / 450) % 2 === 0)) {
-        this.text(this.touchMode ? 'toque para continuar  ▸' : 'press any key  ▸', cx, this.h - 24, 15, accent);
+        this.text(this.touchMode ? 'toque para continuar  ▸' : 'press any key  ▸', cx, this.fb - 24, 15, accent);
       }
     }
 
@@ -1009,6 +1020,11 @@
     // Extra vertical offset that re-centers 600px-tall layouts on a taller
     // (portrait) canvas. 0 on desktop, so desktop layouts are unchanged.
     get oy() { return Math.max(0, (this.h - 600) / 2); }
+
+    // Bottom of the content area for menu/ranking screens. Equals the canvas
+    // bottom up to 900px tall; on taller (full-screen phone) canvases it stays
+    // centered so buttons sit near the content, away from the very bottom edge.
+    get fb() { return this.h - Math.max(0, (this.h - 900) / 2); }
 
     // Effective font size for a nominal size: small text grows on phones.
     ts(size) { return this.phone && size < 22 ? Math.round(size * PHONE_TEXT) : size; }

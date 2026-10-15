@@ -29,8 +29,6 @@ canvas {
 }
 
 /* ---- Phone / tablet layout (html.touch is set by main.js) ---------------- */
-#touchpad { display: none; }
-
 html.touch, html.touch body {
   padding: 0;
   min-height: 0;
@@ -49,46 +47,29 @@ html.touch body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding-top: env(safe-area-inset-top);
 }
 
-/* Game on top (2:3 portrait area), as wide as possible while leaving at least
-   120px for the control strip below. */
+/* The game fills the screen: its shape (--game-aspect = width/height, set by
+   main.js) matches the phone, so it reaches the bottom edge. Steering is by
+   dragging anywhere on the game. */
 html.touch canvas {
   flex: none;
   border: none;
   max-width: none;
   max-height: none;
-  width: min(100vw, calc((100vh - 120px) / 1.5));
-  width: min(100vw, calc((100dvh - 120px - env(safe-area-inset-top)) / 1.5));
+  width: min(100vw, calc(100vh * var(--game-aspect, 0.6667)));
+  width: min(100vw, calc((100dvh - env(safe-area-inset-top)) * var(--game-aspect, 0.6667)));
   height: auto;
   touch-action: none;
 }
 
 html.touch #hint { display: none; }
 
-html.touch #touchpad {
-  display: flex;
-  flex: 1;
-  width: 100%;
-  min-height: 120px;
-  align-items: center;
-  justify-content: center;
-  padding-bottom: env(safe-area-inset-bottom);
-  border-top: 1px solid #2a2a2a;
-  background:
-    radial-gradient(circle at center, rgba(255, 212, 0, 0.06), transparent 70%),
-    #050505;
-  color: #666;
-  font-size: 12px;
-  letter-spacing: 1px;
-  touch-action: none;
-}
-
-/* Phone held sideways: the game takes the full height; steer on the game itself. */
+/* Phone held sideways: the game takes the full height. */
 @media (orientation: landscape) {
   html.touch canvas { width: auto; height: 100vh; height: 100dvh; }
-  html.touch #touchpad { display: none; }
 }
 
 /* Name box higher up so the on-screen keyboard doesn't cover it. */

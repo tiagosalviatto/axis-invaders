@@ -14,15 +14,18 @@
       this.h = bitmap.height;
       this.canvasW = canvasW;
       this.canvasH = canvasH;
+      // bottomPad: free space kept below the ship (phones: room for the thumb
+      // that steers, so it doesn't cover the ship). 0 on desktop.
+      const pad = stats.bottomPad || 0;
       this.x = (canvasW - this.w) / 2;
-      this.y = canvasH - this.h - 24;
+      this.y = canvasH - this.h - 24 - pad;
       this.speed = stats.speed || 300; // px/s
       this.cooldown = 0;
       this.cooldownMax = stats.cooldownMax || 0.28;
       // Vertical movement is restricted to the bottom band of the screen
       // so the ship can't drift into the enemy grid or HUD.
       this.yMin = canvasH * 0.55;
-      this.yMax = canvasH - this.h - 8;
+      this.yMax = canvasH - this.h - 8 - pad;
     }
     update(dt, input) {
       const margin = 8;
